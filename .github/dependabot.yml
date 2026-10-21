@@ -1,9 +1,10 @@
 # Dependabot version updates (https://docs.github.com/en/code-security/dependabot).
 # Keeps the SHA pins of the workflow actions and their "# vX.Y.Z" comments current, the
 # hash-pinned Python tools (requirements-dev.txt, and requirements-test.txt, which Dependabot
-# recompiles from requirements-test.in with pip-compile) and the OpenTofu providers of every
-# module and environment under tofu/ (ADR 0007). A 7-day cooldown lets a bad release surface
-# before it lands here. Every pull request title starts with a Conventional Commit type, so it
+# recompiles from requirements-test.in with pip-compile), the OpenTofu providers and lock files of
+# every module and environment under tofu/ (ADR 0007, ADR 0012) and the base image digests of
+# images/systemd-host/Dockerfile. A 7-day cooldown lets a bad release surface before it lands
+# here. Every pull request title starts with a Conventional Commit type, so it
 # passes the PR-title check. The binary tools pinned by version and sha256 (docs/toolchain.md)
 # are not seen by Dependabot; bump them by hand once a month.
 version: 2
@@ -38,8 +39,8 @@ updates:
       dev-tools:
         patterns: ["*"]
 
-  # Until the first module or environment exists, these globs match no directory with a .tf
-  # file, so the Dependabot log may show this job without dependency files.
+  # Every module and environment has its own lock file. Until the first environment exists,
+  # the /tofu/envs/* glob matches no directory with a .tf file.
   - package-ecosystem: opentofu
     directories:
       - /tofu/modules/*
@@ -60,3 +61,20 @@ updates:
         # The opentofu ecosystem names a provider "<namespace>/<name>" in lower case, without the
         # registry host (dependabot-core opentofu/file_parser.rb), when the module sets its source.
         exclude-patterns: ["bpg/proxmox"]
+
+  # The digest-pinned base images (Debian 13 and Ubuntu 24.04) of the systemd host image that
+  # the docker_host module builds (ADR 0010).
+  - package-ecosystem: docker
+    directory: /images/systemd-host
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+    labels: [dependencies]
+    groups:
+      base-images:
+        patterns: ["*"]

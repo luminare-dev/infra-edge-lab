@@ -10,8 +10,10 @@ x86_64 with the versions in [toolchain.md](toolchain.md); the Python part was al
 |---|---|---|
 | Git | any current version | |
 | Python | 3.12 or 3.13, with the `venv` module | Debian and Ubuntu: package `python3-venv` |
-| go-task | 3.54.0 | runs `task lint` and `task test` |
+| go-task | 3.54.0 | runs `task lint`, `task test` and `task tofu` |
 | OpenTofu, gitleaks, actionlint | as in [toolchain.md](toolchain.md) | needed by `task lint` |
+| OpenTofu, TFLint, Trivy | as in [toolchain.md](toolchain.md) | needed by `task tofu` (Trivy for its `iac` step); on Linux x86_64, `bash scripts/install_tofu_tools.sh ~/.local/bin tofu tflint trivy` installs them after checking their sha256 |
+| Docker Engine | allows privileged containers | needed by the `integration` step of `task tofu` (the `docker_host` module boots containers with systemd) |
 | Node.js | 24.22.0 | runs markdownlint-cli2 in `task lint` |
 
 Install every binary only after its sha256 matches the value in [toolchain.md](toolchain.md).
@@ -45,12 +47,20 @@ task test
 
 The last line of the output starts with `OK`; a test that needs an optional tool, such as
 markdownlint-cli2, that is not on the `PATH` is counted as skipped. `task lint` then runs every
-repository check; each one prints no finding.
+repository check; each one prints no finding. `task tofu` runs the OpenTofu checks; every
+`tofu test` ends with `Success!` and every validation with `The configuration is valid.` The
+OpenTofu checks download the providers named in the lock files into `.terraform/` of each
+module, one copy per module: about 700 MB unpacked, because the Cloudflare provider (about
+190 MB) is used by three modules. With `TF_PLUGIN_CACHE_DIR` set to a directory, every provider
+is stored there once, about 320 MB in all.
 
 ## Uninstall
 
-Delete the clone. Inside it, the tasks create `.venv/` (Python tools) and `.task/` (go-task's
-checksum cache). Outside it, two download caches in your home directory remain: pip's
+Delete the clone. Inside it, the tasks create `.venv/` (Python tools), `.task/` (go-task's
+checksum cache) and `tofu/modules/*/.terraform/` (provider downloads). The `docker_host`
+integration test removes its containers, network and image when it ends; the base images
+`debian:trixie` and `ubuntu:24.04` stay in the Docker image store (`docker image rm` removes
+them). Outside it, two download caches in your home directory remain: pip's
 (`~/.cache/pip`, written by `task venv` and `task test`) and npm's (`~/.npm`, where
 `npx markdownlint-cli2` in `task lint` keeps the package). They may also hold files of other
 projects, so delete them only if nothing else needs them.

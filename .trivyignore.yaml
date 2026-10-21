@@ -1,0 +1,13 @@
+# Findings of the IaC security scan (trivy config, "scripts/check_tofu.sh iac") that are accepted,
+# each with its reason. A path is relative to the folder that the step scans (tofu/ or images/).
+misconfigurations:
+  # images/systemd-host/Dockerfile has no USER: the image stands in for a virtual machine, so
+  # its main process is systemd as PID 1, which must run as root to start the units and users
+  # that the roles create. The container runs only on a local Docker daemon for the local
+  # environment, the tunnel test and Molecule, never as a service of its own.
+  - id: DS-0002
+    paths:
+      - systemd-host/Dockerfile
+    statement: >-
+      The host image runs systemd as PID 1 in place of a virtual machine, which needs root; it is
+      a test substrate on a local Docker daemon, not a service image.

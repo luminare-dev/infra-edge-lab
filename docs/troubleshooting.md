@@ -41,6 +41,24 @@ GITHUB_REPOSITORY=luminare-dev/infra-edge-lab python3 scripts/forbidden_words.py
 **Fix:** install Node.js 24.22.0 as described in [toolchain.md](toolchain.md) and run `task lint`
 again.
 
+## `install_tofu_tools.sh: the pinned downloads are for Linux x86_64`
+
+**Cause:** the script and the sha256 values in [toolchain.md](toolchain.md) are for Linux x86_64
+only.
+
+**Fix:** install OpenTofu, TFLint and Trivy in the versions of [toolchain.md](toolchain.md) from
+their release pages, after checking each download against the release's checksum file.
+
+## The `docker_host` integration test fails while it waits for a container to become healthy
+
+**Cause:** systemd did not finish booting in the container: the Docker daemon does not allow
+privileged containers, the host does not share its cgroup tree (rootless Docker, some container
+runtimes), or the host is slow.
+
+**Fix:** run the test on a Docker daemon that allows privileged containers with the host cgroup
+namespace, or skip that step: `task tofu STEPS='fmt validate tflint iac test compat'`. On a slow host
+raise the module's `wait_timeout`.
+
 ## Still stuck?
 
 Search the issues, then ask in the organization's

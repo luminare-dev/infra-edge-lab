@@ -21,6 +21,10 @@ jobs:
     uses: ./.github/workflows/reusable-ci.yml
     permissions:
       contents: read
+    with:
+      # Installs the hash-pinned tools of requirements-test.txt into a virtual environment and
+      # runs the unit tests (the same command as "task test").
+      test-command: bash scripts/run_tests.sh
 
   secrets:
     uses: ./.github/workflows/reusable-gitleaks.yml

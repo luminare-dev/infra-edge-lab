@@ -4,6 +4,8 @@ extends: default
 ignore: |
   node_modules/
   .venv/
+  .ansible/
+  .terraform/
 
 rules:
   document-start: disable          # GitHub workflow and form files do not use "---"

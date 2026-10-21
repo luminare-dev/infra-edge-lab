@@ -24,3 +24,6 @@ jobs:
       issues: write          # release-please labels
       id-token: write        # Sigstore certificate for the attestation
       attestations: write    # store the attestation
+    with:
+      # The tests run again on the release tag before the archive is built.
+      test-command: bash scripts/run_tests.sh

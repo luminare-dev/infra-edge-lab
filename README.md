@@ -2,70 +2,73 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme-header-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/brand/readme-header-light.svg">
-  <img alt="{{PROJECT_TITLE}}" src="docs/brand/readme-header-light.svg">
+  <img alt="infra-edge-lab" src="docs/brand/readme-header-light.svg">
 </picture>
 
 <!-- byline:studio -->
-*a [Luminare Development](https://luminare.tech/open-source/{{SLUG}}/) open-source project*
+*a [Luminare Development](https://luminare.tech/open-source/infra-edge-lab/) open-source project*
 <!-- /byline:studio -->
 <!-- byline:personal
-*by {{AUTHOR_NAME}} · [project page](https://luminare.tech/open-source/{{SLUG}}/)*
+*by ItsPaulAT · [project page](https://luminare.tech/open-source/infra-edge-lab/)*
 /byline:personal -->
 <!-- header:end -->
 
-<!-- template-only:begin -->
-> [!NOTE]
-> **This repository is a template.** Every open-source repository of the
-> [luminare-dev](https://github.com/luminare-dev) organization starts from it: README skeleton,
-> NOTICE, docs skeleton, licence texts, pinned CI, secret scanning, OpenSSF Scorecard and release
-> automation with checksums and build provenance. Create a repository with **Use this template**,
-> then follow [PUBLISHING.md](PUBLISHING.md), part A. Values in double curly braces are
-> placeholders listed in [PLACEHOLDERS.md](PLACEHOLDERS.md); CI fails until each one is filled.
-> Delete this note, with its two marker comments, in the new repository.
-<!-- template-only:end -->
+# infra-edge-lab
 
-# {{PROJECT_TITLE}}
+Infrastructure as code that rebuilds a small edge environment from nothing with one command, tested on every change.
 
-{{ONE_LINE_PURPOSE}}
-
-[![ci](https://github.com/luminare-dev/{{SLUG}}/actions/workflows/ci.yml/badge.svg)](https://github.com/luminare-dev/{{SLUG}}/actions/workflows/ci.yml)
-[![release](https://img.shields.io/github/v/release/luminare-dev/{{SLUG}}?sort=semver)](https://github.com/luminare-dev/{{SLUG}}/releases)
-[![licence](https://img.shields.io/github/license/luminare-dev/{{SLUG}})](LICENSE)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/luminare-dev/{{SLUG}}/badge)](https://scorecard.dev/viewer/?uri=github.com/luminare-dev/{{SLUG}})
-
-<!-- template: GIF slot. Record a short GIF (or a screenshot) in your own lab: no player data, no
-     hostnames or IP addresses, no game art. Save it as docs/media/demo.gif and replace this
-     comment with the line below. Delete the comment if there is nothing to show.
-     ![One sentence that says what the GIF shows](docs/media/demo.gif) -->
+[![ci](https://github.com/luminare-dev/infra-edge-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/luminare-dev/infra-edge-lab/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/luminare-dev/infra-edge-lab?sort=semver)](https://github.com/luminare-dev/infra-edge-lab/releases)
+[![licence](https://img.shields.io/github/license/luminare-dev/infra-edge-lab)](LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/luminare-dev/infra-edge-lab/badge)](https://scorecard.dev/viewer/?uri=github.com/luminare-dev/infra-edge-lab)
 
 ## Why
 
-{{PROBLEM_STATEMENT}}
-
-<!-- template: 2-4 sentences. Who runs into the problem, what this project does about it, and what
-     it shows in words a reader searches for (for example "Ansible collection with Molecule-tested,
-     idempotent roles"). Facts only; every claim must be reproducible from this repository. -->
+Small server environments are often built by hand: a virtual machine here, a DNS record there, a
+tunnel set up in a web console. Nobody can say whether they could be rebuilt after a loss, and
+credentials end up in shell history. The goal of this project is one repository that describes
+such an environment as code (OpenTofu for machines and DNS, Ansible for configuration, SOPS for
+secrets) and checks every change before it lands. This version lays the foundation: the folder
+layout, a toolchain pinned to exact versions and checksums, the rules for encrypted secrets, and
+the checks and tests that run on every pull request.
 
 ## Quickstart
 
 ```bash
-{{QUICKSTART_COMMANDS}}
+git clone https://github.com/luminare-dev/infra-edge-lab.git
+cd infra-edge-lab
+task test
+task lint
 ```
 
-<!-- template: at most 5 commands, copy-paste ready, tested on a clean machine. Longer setups go
-     to docs/install.md. -->
+`task test` needs go-task and Python 3.12 or 3.13; `task lint` also needs the tools listed in
+[docs/toolchain.md](docs/toolchain.md). [docs/install.md](docs/install.md) has the details.
 
 ## How it works
 
+`task lint` and `task test` run the same checks and tests as CI, so a change that passes them
+locally also passes CI's lint-test and secret-scan jobs.
+
 ```mermaid
 flowchart LR
-    operator(["Operator"]) -->|"runs"| project["{{PROJECT_TITLE}}"]
-    project -->|"changes"| target[("{{TARGET_SYSTEM}}")]
-    ci["CI: lint, tests, secret scan"] -.->|"checks every change"| project
+    operator(["Operator"]) -->|"task lint, task test"| taskfile["Taskfile.yml"]
+    pr(["Pull request"]) --> ci["CI: lint-test, gitleaks, PR title"]
+    deps["Dependabot"] -.->|"weekly pin updates"| pr
+    taskfile --> checks["Repository checks: wording, names, byline, workflow pins, YAML, Markdown, secrets"]
+    ci --> checks
+    taskfile --> tests["scripts/run_tests.sh"]
+    ci --> tests
+    tests -->|"pip --require-hashes"| tools[("Pinned Python tools")]
 ```
 
-<!-- template: replace the diagram with the real flow (5-9 boxes). GitHub renders Mermaid; the
-     project page turns it into a static SVG. -->
+| Folder | Holds at this version |
+|---|---|
+| `tofu/modules/`, `tofu/envs/` | Nothing yet: reusable OpenTofu modules, and one root module with its own state per environment. |
+| `ansible/` | Nothing yet: playbooks, inventories and the roles kept in this repository. |
+| `secrets/` | The rules for SOPS-encrypted dotenv files and an example of their keys; no encrypted file. |
+| `scripts/` | The repository checks from the template and `run_tests.sh`, the test command of CI. |
+| `tests/` | Unit tests for the checks and for this repository's conventions. |
+| `docs/` | Installation, configuration, toolchain, runbook, troubleshooting and the ADRs. |
 
 ## Design decisions
 
@@ -75,68 +78,68 @@ The decisions behind this project are recorded as short ADRs in [docs/adr/](docs
 - [ADR 0002: Pin every action and downloaded tool](docs/adr/0002-pin-actions-and-downloaded-tools.md)
 - [ADR 0003: Secret scanning with the gitleaks binary](docs/adr/0003-secret-scanning-with-the-gitleaks-binary.md)
 - [ADR 0004: Draft releases with checksums and provenance](docs/adr/0004-draft-releases-with-checksums-and-provenance.md)
-
-<!-- template: ADRs 0001-0004 come with the template and describe its CI and release design.
-     Add the project's own decisions from 0005 on, one line each ("Why X instead of Y"). Add an
-     "Alternatives" paragraph when similar projects exist: what they do well and why this project
-     differs. Stay factual and friendly; never belittle another project. -->
+- [ADR 0005: OpenTofu instead of Terraform](docs/adr/0005-opentofu-instead-of-terraform.md)
+- [ADR 0006: SOPS and age for secrets, instead of CI-only secrets or Ansible Vault](docs/adr/0006-sops-and-age-for-secrets.md)
+- [ADR 0007: Dependabot instead of Renovate](docs/adr/0007-dependabot-instead-of-renovate.md)
+- [ADR 0008: go-task as the single entry point, instead of Make or loose scripts](docs/adr/0008-go-task-as-the-single-entry-point.md)
 
 ## Supported versions
 
 | Component | Tested with | Supported |
 |---|---|---|
-| {{COMPONENT}} | {{TESTED_VERSION}} | {{SUPPORTED_RANGE}} |
+| Python (tests and checks) | 3.12 (`python:3.12-slim`, as on the GitHub `ubuntu-24.04` runner), 3.13 (`python:3.13-slim`) | 3.12, 3.13 |
+| ansible-core, ansible-lint, Molecule | not used yet: `scripts/run_tests.sh` installs them and checks the installed versions; no playbook, role or Molecule scenario exists at this version | the versions pinned in `requirements-test.in` |
+| go-task | 3.54.0 | 3.54.0 |
 
+Every other tool, with its checksum, is listed in [docs/toolchain.md](docs/toolchain.md).
 Fixes go into the latest minor release only. See the
 [security policy](https://github.com/luminare-dev/.github/blob/main/SECURITY.md) for reporting.
 
 ## Limitations
 
-- {{LIMITATION}}
-
-<!-- template: what it does not do, known rough edges, and what it was never tested on. -->
+- This version holds the layout, the pinned toolchain and the checks only. It contains no
+  OpenTofu module or environment and no Ansible playbook or role, so it cannot create or change
+  any machine yet.
+- No hypervisor, cloud account, DNS zone or tunnel was used for this version.
+- This version ships no encrypted secrets file and no `.sops.yaml` with age recipients: each
+  operator brings their own keys ([secrets/README.md](secrets/README.md)).
+- The binary tools (OpenTofu, go-task, gitleaks and others) are pinned by version and sha256 but
+  not watched by Dependabot; they are bumped by hand.
+- Tested on Linux x86_64 only; the sha256 values in [docs/toolchain.md](docs/toolchain.md) are
+  for the linux amd64 downloads.
 
 ## Results
 
 | What | Value | How it was measured |
 |---|---|---|
-| {{RESULT}} | {{VALUE}} | {{METHOD}} |
-
-<!-- template: honest numbers with their method and date (run time, idempotence "changed=0",
-     test count, alert rules tested). No numbers you cannot reproduce. -->
+| Unit tests | 124 run, 0 failed, 4 skipped (three need gitleaks or markdownlint-cli2, which CI's lint-test job does not install; one applies to the template repository only) | `bash scripts/run_tests.sh` in `python:3.12-slim` and `python:3.13-slim` with git added, 2026-10-22 |
+| Hash-pinned install of `requirements-test.txt` | 45 packages, `pip check` clean | `pip install --require-hashes --only-binary=:all:` in `python:3.12-slim` and `python:3.13-slim`, 2026-10-21 |
+| Repository checks | 0 findings | `forbidden_words.py` (publish mode), `gitleaks git`, `yamllint --strict`, markdownlint-cli2 0.23.2, actionlint 1.7.12, zizmor 1.30.1, 2026-10-21 |
 
 ## Documentation and links
 
 - [Installation](docs/install.md) · [Configuration](docs/configuration.md) ·
-  [Upgrade](docs/upgrade.md) · [Troubleshooting](docs/troubleshooting.md) ·
-  [Runbook](docs/runbook.md) · [ADRs](docs/adr/)
-- [Changelog](CHANGELOG.md) and [releases](https://github.com/luminare-dev/{{SLUG}}/releases)
+  [Toolchain](docs/toolchain.md) · [Upgrade](docs/upgrade.md) ·
+  [Troubleshooting](docs/troubleshooting.md) · [Runbook](docs/runbook.md) · [ADRs](docs/adr/)
+- Development: `task lint` and `task test` run the checks and tests of CI, and
+  `pre-commit install` runs the quick ones before each commit (`.pre-commit-config.yaml`); the
+  tools and versions are in [docs/toolchain.md](docs/toolchain.md).
+- [Changelog](CHANGELOG.md) and [releases](https://github.com/luminare-dev/infra-edge-lab/releases)
   (each release has `SHA256SUMS` and a build provenance attestation)
 - [Contributing](https://github.com/luminare-dev/.github/blob/main/CONTRIBUTING.md) ·
   [Code of conduct](https://github.com/luminare-dev/.github/blob/main/CODE_OF_CONDUCT.md) ·
   [Security](https://github.com/luminare-dev/.github/blob/main/SECURITY.md) ·
   [Support](https://github.com/luminare-dev/.github/blob/main/SUPPORT.md)
-- Project page: <https://luminare.tech/open-source/{{SLUG}}/>
-
-<!-- fxserver:begin -->
-## Not affiliated
-
-Not affiliated with or endorsed by Cfx.re, Rockstar Games or Take-Two. FiveM, RedM and FXServer
-are named only to describe what this project works with.
-
-<!-- template: keep this section only for projects that work with FiveM or RedM servers
-     (FXServer); otherwise delete it from fxserver:begin to fxserver:end. Platform names go in the
-     description and topics, never in the project name. -->
-<!-- fxserver:end -->
+- Project page: <https://luminare.tech/open-source/infra-edge-lab/>
 
 ## Licence
 
-[{{SPDX_ID}}](LICENSE). The licence covers the code only: the project name, logo, header images
+[Apache-2.0](LICENSE). The licence covers the code only: the project name, logo, header images
 and `docs/brand/` are not licensed (see [NOTICE](NOTICE)).
 
 <!-- byline:studio -->
-*a [Luminare Development](https://luminare.tech/open-source/{{SLUG}}/) open-source project*
+*a [Luminare Development](https://luminare.tech/open-source/infra-edge-lab/) open-source project*
 <!-- /byline:studio -->
 <!-- byline:personal
-*by {{AUTHOR_NAME}} · [project page](https://luminare.tech/open-source/{{SLUG}}/)*
+*by ItsPaulAT · [project page](https://luminare.tech/open-source/infra-edge-lab/)*
 /byline:personal -->

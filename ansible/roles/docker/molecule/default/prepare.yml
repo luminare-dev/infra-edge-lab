@@ -1,0 +1,56 @@
+# Test fixtures: the firewall layout that the luminare.infra_edge base role writes (nftables
+# installed, /etc/nftables.conf with input and forward policy drop and the include of
+# /etc/nftables.d/*.nft as its last line; not loaded yet) and a user for docker_users.
+- name: Prepare
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Install nftables
+      ansible.builtin.apt:
+        name: nftables
+        state: present
+        update_cache: true
+
+    - name: Create the drop-in directory
+      ansible.builtin.file:
+        path: /etc/nftables.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Write a ruleset in the layout of the base role
+      ansible.builtin.copy:
+        dest: /etc/nftables.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          #!/usr/sbin/nft -f
+          flush ruleset
+
+          table inet filter {
+            chain input {
+              type filter hook input priority filter; policy drop;
+              iif "lo" accept
+              ct state established,related accept
+              ct state invalid drop
+              meta l4proto { icmp, ipv6-icmp } accept
+            }
+
+            chain forward {
+              type filter hook forward priority filter; policy drop;
+            }
+
+            chain output {
+              type filter hook output priority filter; policy accept;
+            }
+          }
+
+          include "/etc/nftables.d/*.nft"
+
+    - name: Create the user for docker_users
+      ansible.builtin.user:
+        name: lab-operator
+        shell: /bin/bash
+        create_home: true

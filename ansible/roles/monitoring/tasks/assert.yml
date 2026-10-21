@@ -1,0 +1,179 @@
+- name: Gather the facts the role needs
+  ansible.builtin.setup:
+    gather_subset:
+      - min
+  when: ansible_facts['distribution'] is not defined or ansible_facts['architecture'] is not defined
+
+- name: Check the platform (Debian 13 or Ubuntu 24.04 on x86_64 or arm64)
+  ansible.builtin.assert:
+    that:
+      - >-
+        (ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == '13')
+        or (ansible_facts['distribution'] == 'Ubuntu' and ansible_facts['distribution_version'] == '24.04')
+      - __monitoring_arch in ['amd64', 'arm64']
+    fail_msg: >-
+      The monitoring role supports Debian 13 and Ubuntu 24.04 on x86_64 or arm64; this host is
+      {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }} on
+      {{ ansible_facts['architecture'] }}. Nothing was changed.
+    quiet: true
+
+- name: Check the node_exporter settings
+  ansible.builtin.assert:
+    that:
+      - monitoring_node_exporter_listen_address is match(__monitoring_private_address_re)
+      - monitoring_node_exporter_port | int >= 1 and monitoring_node_exporter_port | int <= 65535
+      - monitoring_node_exporter_version is match('^[0-9]+[.][0-9]+[.][0-9]+$')
+      - (monitoring_node_exporter_checksums[__monitoring_arch] | default('')) is match('^[0-9a-f]{64}$')
+      - monitoring_node_exporter_textfile_dir is match('^/[^ \t\r\n]+$')
+      - >-
+        monitoring_node_exporter_extra_args
+        | reject('match', '^--[a-z0-9][a-z0-9._-]*(=[^ \t\r\n"\x27\\\\]*)?$') | list | length == 0
+      - >-
+        monitoring_node_exporter_extra_args
+        | select('match', '^--(web[.]listen-address|collector[.]textfile[.]directory)') | list | length == 0
+    fail_msg: >-
+      monitoring_node_exporter_listen_address must be a loopback or private address (got
+      "{{ monitoring_node_exporter_listen_address }}"; 0.0.0.0, :: and public addresses are refused),
+      the port 1-65535, the version X.Y.Z with a sha256 for {{ __monitoring_arch }} in
+      monitoring_node_exporter_checksums, the textfile directory an absolute path, and each extra
+      argument one --flag[=value] without spaces or quotes that does not set the listen address or
+      the textfile directory. Nothing was changed.
+    quiet: true
+  when: monitoring_node_exporter_enabled | bool
+
+- name: Check the firewall sources (IPv4 or IPv6 addresses or networks, private listen address)
+  ansible.builtin.assert:
+    that:
+      - >-
+        monitoring_node_exporter_allowed_sources
+        | reject('match', '^[0-9]{1,3}([.][0-9]{1,3}){3}(/[0-9]{1,2})?$')
+        | reject('match', '^[0-9A-Fa-f:]*:[0-9A-Fa-f:.]*(/[0-9]{1,3})?$')
+        | list | length == 0
+      - >-
+        monitoring_node_exporter_allowed_sources | length == 0
+        or not monitoring_node_exporter_listen_address is match(__monitoring_loopback_address_re)
+    fail_msg: >-
+      monitoring_node_exporter_allowed_sources must hold IPv4 or IPv6 addresses or networks, and
+      only a private (not loopback) listen address can be reached from other hosts. Nothing was
+      changed.
+    quiet: true
+
+- name: Check the Uptime Kuma settings
+  ansible.builtin.assert:
+    that:
+      - monitoring_uptime_kuma_bind_address is match(__monitoring_private_address_re)
+      - monitoring_uptime_kuma_port | int >= 1 and monitoring_uptime_kuma_port | int <= 65535
+      - monitoring_uptime_kuma_image is search('@sha256:[0-9a-f]{64}$')
+      - monitoring_uptime_kuma_container_name is match('^[a-zA-Z0-9][a-zA-Z0-9_.-]*$')
+      - monitoring_uptime_kuma_data_volume is match('^[a-zA-Z0-9][a-zA-Z0-9_.-]*$')
+      - monitoring_uptime_kuma_checklist_path is match('^/[^ \t\r\n]+$')
+    fail_msg: >-
+      monitoring_uptime_kuma_bind_address must be a loopback or private address (got
+      "{{ monitoring_uptime_kuma_bind_address }}"), the port 1-65535, the image pinned by digest
+      (name:tag@sha256:...), the container and volume names Docker names, and the checklist path
+      absolute. Nothing was changed.
+    quiet: true
+  when: monitoring_uptime_kuma_enabled | bool
+
+- name: Check that the monitor names are unique
+  ansible.builtin.assert:
+    that:
+      - >-
+        (monitoring_monitors + monitoring_external_probes) | map(attribute='name') | unique | length
+        == (monitoring_monitors + monitoring_external_probes) | length
+    fail_msg: Every monitor in monitoring_monitors and monitoring_external_probes needs its own name.
+    quiet: true
+
+# url: http(s) without a user name or password; host: a name or an address, without a scheme.
+- name: Check each monitor
+  ansible.builtin.assert:
+    that:
+      - item.name is match('^[^|\r\n]{1,100}$')
+      - item.interval | default(60) | int >= 20
+      - item.type not in ['http', 'keyword'] or (item.url | default('')) is match('^https?://[^\s@/?#]+([/?#]\S*)?$')
+      - item.type != 'keyword' or (item.keyword | default('')) is match('^[^|\r\n]+$')
+      - item.type not in ['port', 'ping', 'dns', 'smtp'] or (item.host | default('')) is match('^[A-Za-z0-9.:-]+$')
+      - item.type not in ['port', 'smtp'] or (item.port | default(0) | int >= 1 and item.port | int <= 65535)
+      - (item.notes | default('')) is match('^[^|\r\n]*$')
+    fail_msg: >-
+      Monitor "{{ item.name }}" ({{ item.type }}): http and keyword need url (http:// or https://,
+      without user name or password), keyword also keyword; port, ping, dns and smtp need host,
+      port and smtp also port (1-65535); the interval is at least 20 seconds; no "|" or line breaks
+      in name, keyword and notes.
+    quiet: true
+  loop: "{{ monitoring_monitors }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Check each external probe (read-only, by name, at most every 5 minutes)
+  vars:
+    __monitoring_probe_host: >-
+      {{ (item.url | default('') | urlsplit('hostname')) if item.type in ['http', 'keyword']
+         else item.host | default('') }}
+  ansible.builtin.assert:
+    that:
+      - item.name is match('^[^|\r\n]{1,100}$')
+      - item.interval | default(300) | int >= 300
+      - item.type not in ['http', 'keyword'] or (item.url | default('')) is match('^https?://[^\s@/?#]+([/?#]\S*)?$')
+      - item.type != 'keyword' or (item.keyword | default('')) is match('^[^|\r\n]+$')
+      - item.type not in ['port', 'smtp'] or (item.port | default(0) | int >= 1 and item.port | int <= 65535)
+      - __monitoring_probe_host is match('^[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*$')
+      - not __monitoring_probe_host is match('^[0-9.]+$')
+      - (item.notes | default('')) is match('^[^|\r\n]*$')
+    fail_msg: >-
+      External probe "{{ item.name }}" ({{ item.type }}): the target must be a host name, never an
+      IP address, a URL must not hold a user name or password, the interval is at least 300
+      seconds, and port and smtp need a port (1-65535).
+    quiet: true
+  loop: "{{ monitoring_external_probes }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# The drop-in is written when monitoring_firewall_manage is true or /etc/nftables.d exists, and it
+# is checked together with /etc/nftables.conf by nft.
+- name: Look for the nftables drop-in directory, /etc/nftables.conf and nft
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+  loop:
+    - "{{ __monitoring_nft_dir }}"
+    - /etc/nftables.conf
+    - /usr/sbin/nft
+  register: __monitoring_nft_stat
+
+- name: Decide whether the role manages the firewall drop-in
+  ansible.builtin.set_fact:
+    __monitoring_firewall_write: >-
+      {{ monitoring_firewall_manage | bool or __monitoring_nft_stat.results[0].stat.exists }}
+
+- name: Require /etc/nftables.conf and nft when the role writes the drop-in
+  ansible.builtin.assert:
+    that:
+      - __monitoring_nft_stat.results[1].stat.exists
+      - __monitoring_nft_stat.results[2].stat.exists
+    fail_msg: >-
+      The role writes {{ __monitoring_nft_dropin }} and checks it with "nft --check" together with
+      /etc/nftables.conf, but /etc/nftables.conf or nft is missing. Apply the firewall of the
+      luminare.infra_edge base role first. Nothing was changed.
+    quiet: true
+  when:
+    - __monitoring_firewall_write | bool
+    - monitoring_node_exporter_enabled | bool
+    - monitoring_node_exporter_allowed_sources | length > 0
+
+- name: Look for the docker command (the docker role installs it)
+  ansible.builtin.stat:
+    path: /usr/bin/docker
+    get_checksum: false
+  register: __monitoring_docker_cli
+  when: monitoring_uptime_kuma_enabled | bool
+
+- name: Require Docker for Uptime Kuma
+  ansible.builtin.assert:
+    that:
+      - __monitoring_docker_cli.stat.exists
+    fail_msg: >-
+      monitoring_uptime_kuma_enabled is true, but Docker is not installed: apply the docker role
+      before the monitoring role. Nothing was changed.
+    quiet: true
+  when: monitoring_uptime_kuma_enabled | bool

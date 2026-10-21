@@ -1,0 +1,21 @@
+#!/bin/sh
+# Test stand-in for a deploy script (Molecule only, not a deploy script to use). For every
+# completed upload (<name>.ready) it checks <name>.zip against <name>.sha256, writes the result,
+# the user it runs as and the environment it got into DEPLOY_RELEASE_ROOT/<name>.result, logs one
+# line to the journal and deletes the processed files from the spool directory.
+set -eu
+
+cd "$DEPLOY_SPOOL_DIR"
+for ready in *.ready; do
+  [ -f "$ready" ] || continue
+  name="${ready%.ready}"
+  if sha256sum --check --status -- "$name.sha256" 2>/dev/null; then
+    result=verified
+  else
+    result=rejected
+  fi
+  printf '%s %s user=%s keep=%s reload=%s\n' "$name" "$result" "$(id -un)" \
+    "$DEPLOY_KEEP_VERSIONS" "$DEPLOY_RELOAD_HOOK" > "$DEPLOY_RELEASE_ROOT/$name.result"
+  echo "deploy-stub: $name $result"
+  rm -f -- "$name.zip" "$name.sha256" "$ready"
+done

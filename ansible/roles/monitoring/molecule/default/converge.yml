@@ -1,0 +1,57 @@
+- name: Converge
+  hosts: all
+  gather_facts: true
+  vars:
+    # Debian: the instance's own address on its Docker network (a private address, never written
+    # into this repository) plus firewall sources from the documentation ranges (RFC 5737,
+    # RFC 3849). Ubuntu: the defaults (loopback, no sources).
+    monitoring_private: "{{ 'debian' in group_names }}"
+  tasks:
+    - name: Apply the docker role (Uptime Kuma runs in Docker)
+      ansible.builtin.include_role:
+        name: docker
+      vars:
+        docker_firewall_reload: false
+
+    - name: Apply the monitoring role
+      ansible.builtin.include_role:
+        name: monitoring
+      vars:
+        monitoring_node_exporter_listen_address: >-
+          {{ ansible_facts['default_ipv4']['address'] if monitoring_private else '127.0.0.1' }}
+        monitoring_node_exporter_allowed_sources: >-
+          {{ ['192.0.2.0/24', '2001:db8::/32'] if monitoring_private else [] }}
+        monitoring_firewall_reload: false
+        monitoring_uptime_kuma_enabled: true
+        monitoring_monitors:
+          - name: Web site
+            type: http
+            url: https://lab-demo.example.com/
+            accepted_status_codes: 200-302
+          - name: Status page keyword
+            type: keyword
+            url: https://lab-status.example.com/status/lab
+            keyword: Operational
+            interval: 120
+          - name: Game port
+            type: port
+            host: 192.0.2.13
+            port: 30120
+            notes: TCP only; UDP cannot be checked
+          - name: Database
+            type: port
+            host: 192.0.2.12
+            port: 3306
+          - name: Backup age
+            type: push
+            interval: 93600
+            notes: the backup job calls the push URL after each run
+        monitoring_external_probes:
+          - name: Example site
+            type: http
+            url: https://www.example.com/
+          - name: Example mail submission
+            type: port
+            host: mail.example.com
+            port: 587
+            interval: 600

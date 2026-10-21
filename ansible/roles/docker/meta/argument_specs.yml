@@ -1,0 +1,84 @@
+argument_specs:
+  main:
+    short_description: Docker Engine from Docker's repository, with published ports on a private address
+    description:
+      - Installs Docker Engine from Docker's APT repository (key checked against a pinned sha256) on
+        Debian 13 or Ubuntu 24.04, for monitoring and other container hosts.
+      - Sets the daemon's default address for published ports to loopback (or a private address),
+        because Docker's port rules bypass the host firewall.
+      - Refuses hosts in the groups of docker_forbidden_groups (game servers).
+      - Adds forward rules for Docker's networks to the nftables drop-in directory of the base role
+        and restarts Docker whenever nftables.service is restarted.
+    options:
+      docker_forbidden_groups:
+        type: list
+        elements: str
+        default:
+          - fxserver
+        description: >-
+          Inventory groups whose hosts must not run Docker. The role stops before any change on a
+          host in one of them.
+      docker_apt_repository_url:
+        type: str
+        default: https://download.docker.com/linux
+        description: >-
+          Base URL of Docker's APT repository; the role appends the distribution (debian or ubuntu)
+          for the repository and its signing key.
+      docker_apt_key_checksum:
+        type: str
+        default: "sha256:1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570"
+        description: >-
+          Checksum of Docker's repository signing key file (fingerprint
+          9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88); the download fails when the file
+          differs.
+      docker_packages:
+        type: list
+        elements: str
+        default:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        description: Packages to install from Docker's repository.
+      docker_default_bind_ip:
+        type: str
+        default: 127.0.0.1
+        description: >-
+          Default address of published container ports ("ip" in /etc/docker/daemon.json). Must be a
+          loopback or private address (127.0.0.0/8 or ::1, the RFC 1918 networks, the RFC 6598
+          shared address space or an IPv6 unique local address in fc00::/7); the role
+          refuses any other.
+      docker_daemon_options:
+        type: dict
+        default:
+          log-driver: journald
+          live-restore: true
+        description: >-
+          Settings for /etc/docker/daemon.json. The key "ip" is always replaced by
+          docker_default_bind_ip. The file is checked with "dockerd --validate".
+      docker_users:
+        type: list
+        elements: str
+        default: []
+        description: >-
+          Existing users to add to the docker group. Membership allows root access to the host
+          through the Docker API; keep the list empty unless a user needs it.
+      docker_restart_with_nftables:
+        type: bool
+        default: true
+        description: >-
+          Add a docker.service drop-in (After= and PartOf=nftables.service), so that a restart of
+          nftables.service, which flushes the whole ruleset, also restarts Docker and its rules.
+      docker_firewall_manage:
+        type: bool
+        default: false
+        description: >-
+          Write the forward rules (/etc/nftables.d/60-docker.nft) even when /etc/nftables.d does
+          not exist yet. Without it, the file is written only when the directory exists.
+      docker_firewall_reload:
+        type: bool
+        default: true
+        description: >-
+          Restart nftables.service after the forward rules changed. Molecule sets it to false and
+          restarts the service in its verify step instead.

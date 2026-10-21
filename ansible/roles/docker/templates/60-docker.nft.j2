@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+# docker role: Docker's bridge networks (docker0 and br-* for user-defined networks).
+# Included by /etc/nftables.conf after table inet filter (forward policy drop): accept rules only.
+# Containers may open connections and get the replies; a new connection into a container is
+# accepted only when Docker forwarded it to a published port (ct status dnat), and published
+# ports are bound to {{ docker_default_bind_ip }} (daemon.json "ip").
+add rule inet filter forward iifname "docker0" accept
+add rule inet filter forward oifname "docker0" ct state established,related accept
+add rule inet filter forward oifname "docker0" ct status dnat accept
+add rule inet filter forward iifname "br-*" accept
+add rule inet filter forward oifname "br-*" ct state established,related accept
+add rule inet filter forward oifname "br-*" ct status dnat accept

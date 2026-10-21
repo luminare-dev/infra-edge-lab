@@ -1,0 +1,295 @@
+# Checks of the deploy_target role: the upload account, its restricted key, the spool directory,
+# uploads through SSH and rrsync with the key that prepare.yml generated (a half upload does not
+# start the service, the marker does, within 10 seconds), everything else the key must not do,
+# and the refusals of the role's checks.
+- name: Verify
+  hosts: all
+  gather_facts: true
+  vars:
+    deploy_target_ssh: >-
+      ssh -i /root/ci-key -o BatchMode=yes -o StrictHostKeyChecking=no
+      -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+    deploy_target_package: luminare_test-1.0.0
+  tasks:
+    - name: Read the upload account
+      ansible.builtin.getent:
+        database: passwd
+        key: deploy
+
+    - name: Read the groups of the upload account
+      ansible.builtin.command:
+        cmd: id -nG deploy
+      register: deploy_target_groups
+      changed_when: false
+
+    - name: Read the sudo rights of the upload account
+      ansible.builtin.command:
+        cmd: sudo -l -U deploy
+      register: deploy_target_sudo
+      changed_when: false
+
+    - name: The upload account has /bin/sh, only its own group and sshusers, and no sudo rights
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['getent_passwd']['deploy'][5] == '/bin/sh'
+          - deploy_target_groups.stdout.split() | sort == ['deploy', 'sshusers']
+          - deploy_target_sudo.stdout is search('is not allowed to run sudo')
+        quiet: true
+
+    - name: Read authorized_keys
+      ansible.builtin.slurp:
+        src: /home/deploy/.ssh/authorized_keys
+      register: deploy_target_keys
+
+    - name: Read the test public key
+      ansible.builtin.slurp:
+        src: /root/ci-key.pub
+      register: deploy_target_pub
+
+    - name: Read the owner and mode of authorized_keys and of the spool directory and release root
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        get_checksum: false
+      loop:
+        - /home/deploy/.ssh/authorized_keys
+        - /srv/luminare/incoming
+        - /opt/fxserver/releases
+      register: deploy_target_paths
+
+    - name: The key is restricted to write-only rrsync into the spool directory, from the host only
+      vars:
+        deploy_target_key_lines: >-
+          {{ (deploy_target_keys.content | b64decode).splitlines() | reject('match', '^(#.*)?$') | list }}
+        deploy_target_expected: >-
+          restrict,from="127.0.0.1,::1",command="/usr/bin/rrsync -wo -no-del /srv/luminare/incoming"
+          {{ (deploy_target_pub.content | b64decode).split()[:2] | join(' ') }} molecule-ci
+      ansible.builtin.assert:
+        that:
+          - deploy_target_key_lines == [deploy_target_expected]
+        fail_msg: "{{ deploy_target_key_lines }}"
+        quiet: true
+
+    - name: Owners and modes are as designed
+      vars:
+        deploy_target_stat: "{{ deploy_target_paths.results | map(attribute='stat') | list }}"
+      ansible.builtin.assert:
+        that:
+          - deploy_target_stat[0].pw_name == 'root' and deploy_target_stat[0].mode == '0644'
+          - deploy_target_stat[1].pw_name == 'deploy' and deploy_target_stat[1].gr_name == 'fxserver'
+          - deploy_target_stat[1].mode == '2770'
+          - deploy_target_stat[2].pw_name == 'fxserver' and deploy_target_stat[2].mode == '0750'
+        quiet: true
+
+    - name: Read the units
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+      loop:
+        - luminare-deploy.path
+        - luminare-deploy.service
+      register: deploy_target_units
+
+    - name: The path unit is enabled and waiting; the service runs as fxserver without privileges
+      vars:
+        deploy_target_path: "{{ deploy_target_units.results[0].status }}"
+        deploy_target_service: "{{ deploy_target_units.results[1].status }}"
+      ansible.builtin.assert:
+        that:
+          - deploy_target_path.ActiveState == 'active'
+          - deploy_target_path.UnitFileState == 'enabled'
+          - deploy_target_service.ActiveState == 'inactive'
+          - deploy_target_service.User == 'fxserver'
+          - deploy_target_service.NoNewPrivileges == 'yes'
+          - deploy_target_service.ProtectSystem == 'strict'
+        quiet: true
+
+    - name: A shell command with the key is refused by the forced command
+      ansible.builtin.command:
+        cmd: "{{ deploy_target_ssh }} deploy@127.0.0.1 ls -la /"
+      register: deploy_target_ls
+      changed_when: false
+      failed_when: >-
+        deploy_target_ls.rc == 0 or deploy_target_ls.stdout | length > 0
+        or not deploy_target_ls.stderr is search('SSH_ORIGINAL_COMMAND does not run rsync')
+
+    - name: Port forwarding with the key is refused (restrict)
+      ansible.builtin.command:
+        cmd: "{{ deploy_target_ssh }} -o ExitOnForwardFailure=yes -R 127.0.0.1:20022:127.0.0.1:22 deploy@127.0.0.1"
+      register: deploy_target_forward
+      changed_when: false
+      failed_when: >-
+        deploy_target_forward.rc == 0
+        or not deploy_target_forward.stderr is search('forwarding failed')
+
+    - name: The key is refused from another source address (from=)
+      vars:
+        deploy_target_own_ip: "{{ ansible_facts['default_ipv4']['address'] }}"
+      ansible.builtin.command:
+        cmd: "{{ deploy_target_ssh }} -b {{ deploy_target_own_ip }} deploy@{{ deploy_target_own_ip }} true"
+      register: deploy_target_other_source
+      changed_when: false
+      failed_when: >-
+        deploy_target_other_source.rc == 0
+        or not deploy_target_other_source.stderr is search('Permission denied')
+
+    - name: Create a test package (archive and checksum) and its marker
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          mkdir -p /root/pkg/empty
+          cd /root/pkg
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile("{{ deploy_target_package }}.zip", "w") as z:
+              z.writestr("luminare_test/README.txt", "test\n")
+          PY
+          sha256sum {{ deploy_target_package }}.zip > {{ deploy_target_package }}.sha256
+          : > {{ deploy_target_package }}.ready
+        creates: /root/pkg/{{ deploy_target_package }}.ready
+
+    - name: Upload the archive and its checksum (without the marker yet)
+      ansible.builtin.command:
+        argv:
+          - rsync
+          - -e
+          - "{{ deploy_target_ssh }}"
+          - --perms
+          - --chmod=F640
+          - /root/pkg/{{ deploy_target_package }}.zip
+          - /root/pkg/{{ deploy_target_package }}.sha256
+          - "deploy@127.0.0.1:"
+      changed_when: true
+
+    - name: Give a wrongly started service time to run
+      ansible.builtin.wait_for:
+        path: /opt/fxserver/releases/{{ deploy_target_package }}.result
+        timeout: 3
+      register: deploy_target_early
+      failed_when: false
+
+    - name: Read the spool directory
+      ansible.builtin.find:
+        paths: /srv/luminare/incoming
+        hidden: true
+      register: deploy_target_spool_half
+
+    - name: A half upload does not start the service; the files belong to the run group
+      ansible.builtin.assert:
+        that:
+          - deploy_target_early.msg | default('') is search('Timeout')
+          - deploy_target_spool_half.files | map(attribute='path') | map('basename') | sort
+            == [deploy_target_package ~ '.sha256', deploy_target_package ~ '.zip']
+          - deploy_target_spool_half.files | map(attribute='gr_name') | unique == ['fxserver']
+          - deploy_target_spool_half.files | map(attribute='mode') | unique == ['0640']
+        fail_msg: "{{ deploy_target_early }} {{ deploy_target_spool_half.files }}"
+        quiet: true
+
+    - name: Upload the marker
+      ansible.builtin.command:
+        argv:
+          - rsync
+          - -e
+          - "{{ deploy_target_ssh }}"
+          - /root/pkg/{{ deploy_target_package }}.ready
+          - "deploy@127.0.0.1:"
+      changed_when: true
+
+    - name: The path unit starts the deploy within 10 seconds
+      ansible.builtin.wait_for:
+        path: /opt/fxserver/releases/{{ deploy_target_package }}.result
+        timeout: 10
+
+    - name: Read the result of the deploy script
+      ansible.builtin.slurp:
+        src: /opt/fxserver/releases/{{ deploy_target_package }}.result
+      register: deploy_target_result
+
+    - name: Read the spool directory after the deploy
+      ansible.builtin.find:
+        paths: /srv/luminare/incoming
+        hidden: true
+      register: deploy_target_spool_after
+
+    - name: Read the journal of the deploy service
+      ansible.builtin.command:
+        cmd: journalctl --unit luminare-deploy.service --no-pager --output cat
+      register: deploy_target_journal
+      changed_when: false
+
+    - name: The script ran as fxserver with the role's environment, read the upload and removed it
+      ansible.builtin.assert:
+        that:
+          - >-
+            (deploy_target_result.content | b64decode | trim)
+            == deploy_target_package ~ ' verified user=fxserver keep=2 reload=0'
+          - deploy_target_spool_after.files | length == 0
+          - >-
+            deploy_target_journal.stdout is search('deploy-stub: ' ~ deploy_target_package ~ ' verified')
+        fail_msg: "{{ deploy_target_result.content | b64decode }} {{ deploy_target_journal.stdout }}"
+        quiet: true
+
+    - name: Reading from the spool directory with the key is refused (write only)
+      ansible.builtin.command:
+        argv:
+          - rsync
+          - -e
+          - "{{ deploy_target_ssh }}"
+          - "deploy@127.0.0.1:{{ deploy_target_package }}.zip"
+          - /root/pkg/downloaded.zip
+      register: deploy_target_read
+      changed_when: false
+      failed_when: >-
+        deploy_target_read.rc == 0
+        or not deploy_target_read.stderr is search('reading from write-only server is not allowed')
+
+    - name: Deleting in the spool directory with the key is refused (-no-del)
+      ansible.builtin.command:
+        argv:
+          - rsync
+          - -e
+          - "{{ deploy_target_ssh }}"
+          - --recursive
+          - --delete
+          - /root/pkg/empty/
+          - "deploy@127.0.0.1:"
+      register: deploy_target_delete
+      changed_when: false
+      failed_when: >-
+        deploy_target_delete.rc == 0
+        or not deploy_target_delete.stderr is search('option --delete[a-z-]* has been disabled on this server')
+
+    # The role's checks run before any change; each case below must stop the role.
+    - name: The role refuses to run without a deploy script
+      block:
+        - name: Apply the role without deploy_target_script_src
+          ansible.builtin.include_role:
+            name: deploy_target
+          vars:
+            deploy_target_script_src: ""
+        - name: This task must not be reached
+          ansible.builtin.fail:
+            msg: The role ran without a deploy script.
+      rescue:
+        - name: The failure came from the settings check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is search('deploy_target_script_src must name the deploy script')
+            quiet: true
+
+    - name: The role refuses rrsync options without -wo
+      block:
+        - name: Apply the role with a read-write forced command
+          ansible.builtin.include_role:
+            name: deploy_target
+          vars:
+            deploy_target_script_src: "{{ playbook_dir }}/files/deploy-stub"
+            deploy_target_rrsync_options:
+              - -no-del
+        - name: This task must not be reached
+          ansible.builtin.fail:
+            msg: The role accepted rrsync without -wo.
+      rescue:
+        - name: The failure came from the settings check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is search('that includes -wo')
+            quiet: true

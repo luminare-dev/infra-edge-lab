@@ -1,0 +1,12 @@
+- name: Converge
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Apply the docker role
+      ansible.builtin.include_role:
+        name: docker
+      vars:
+        docker_users:
+          - lab-operator
+        # verify.yml restarts nftables.service itself, after it has checked the files.
+        docker_firewall_reload: false

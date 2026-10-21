@@ -1,0 +1,36 @@
+# Collections for the playbooks of this repository. Install them from the ansible/ folder with
+#   ansible-galaxy collection install -r requirements.yml
+# (into ansible/collections, see ansible.cfg).
+#
+# The luminare collections come from their GitHub repositories at a release tag (type: git), not
+# from Ansible Galaxy (docs/adr/0016). The community collections are pinned to the versions that
+# the "ansible" package in requirements-test.txt bundles, so a run uses the versions that lint and
+# Molecule tested; tests/test_ansible.py keeps them equal.
+collections:
+  # Base hardening, tunnel, web server and database (luminare.infra_edge.base, cloudflared, nginx,
+  # mariadb, restic_backup).
+  - name: luminare.infra_edge
+    type: git
+    source: https://github.com/luminare-dev/ansible-collection-infra_edge.git
+    version: v0.2.0
+  # Game server and its web panel (luminare.gameserver.fxserver, txadmin, gameserver_observability).
+  - name: luminare.gameserver
+    type: git
+    source: https://github.com/luminare-dev/ansible-collection-gameserver.git
+    version: v0.2.0
+  # The docker modules of the monitoring role (Uptime Kuma container).
+  - name: community.docker
+    version: 5.4.0
+  # The SOPS vars plugin of ansible.cfg.
+  - name: community.sops
+    version: 2.5.0
+  # Collections that the roles of the luminare collections use, pinned here so that every run
+  # resolves the same versions (the collections themselves declare version ranges only).
+  - name: ansible.posix
+    version: 2.2.2
+  - name: community.general
+    version: 13.5.0
+  - name: ansible.mariadb
+    version: 6.0.2
+  - name: devsec.hardening
+    version: 11.0.0

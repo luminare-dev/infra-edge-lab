@@ -1,0 +1,30 @@
+# Defaults of the docker role. Every variable is described, with its type, in
+# meta/argument_specs.yml; the tables in README.md and docs/configuration.md are generated from it.
+
+# Placement: hosts in these inventory groups refuse the role (game servers keep Docker off).
+docker_forbidden_groups:
+  - fxserver
+
+# Docker's APT repository; the distribution (debian or ubuntu) is appended.
+docker_apt_repository_url: https://download.docker.com/linux
+docker_apt_key_checksum: "sha256:1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570"
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+# Daemon settings (/etc/docker/daemon.json); "ip" always comes from docker_default_bind_ip.
+docker_default_bind_ip: 127.0.0.1
+docker_daemon_options:
+  log-driver: journald
+  live-restore: true
+
+# Users that may run docker (membership in the docker group is equal to root).
+docker_users: []
+
+# Firewall (luminare.infra_edge.base layout: /etc/nftables.conf includes /etc/nftables.d/*.nft)
+docker_restart_with_nftables: true
+docker_firewall_manage: false
+docker_firewall_reload: true

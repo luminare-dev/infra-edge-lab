@@ -92,6 +92,81 @@ requests to AWS instead of R2, so the script stops first.
 **Fix:** run `task init ENV=<env>` again with the backend you want; it runs
 `tofu init -reconfigure`.
 
+## ansible-lint: `couldn't resolve module/action 'community.docker.docker_container'`
+
+**Cause:** ansible-lint runs outside the virtual environment of `requirements-test.txt`, whose
+`ansible` package brings the community collections, or an older copy of a collection in
+`~/.ansible/collections` comes first in the collection path.
+
+**Fix:** run it through `task test` (or `bash scripts/run_tests.sh`), which installs the pinned
+tools and puts them first on the `PATH`. Remove an outdated copy with
+`rm -r ~/.ansible/collections/ansible_collections/community/docker` if nothing else needs it.
+
+## `ansible-galaxy collection install -r requirements.yml` fails to clone a luminare collection
+
+**Cause:** the luminare collections are installed from their GitHub repositories at a release
+tag (`type: git`). The clone fails when the tag does not exist yet, when the repository is not
+readable from this machine, or without `git`.
+
+**Fix:** check that `git ls-remote https://github.com/luminare-dev/ansible-collection-infra_edge.git v0.2.0`
+prints the tag. The tests of this repository never install these collections, so they are not
+affected.
+
+## Molecule: a scenario stops for about two minutes when it starts Docker or node_exporter
+
+**Cause:** the instance was built from an image in which `systemd-networkd-wait-online.service`
+is active: in a container it finds no interface to wait for and holds every unit ordered after
+`network-online.target` until it times out.
+
+**Fix:** build the instances from `images/systemd-host/Dockerfile`, which masks that unit
+(`.config/molecule/config.yml` does this); remove an old `molecule_local/lab-molecule-*` image so
+that it is built again.
+
+## Molecule: `failed to mount ... fstype: overlay ... invalid argument` in the docker or monitoring scenario
+
+**Cause:** Docker inside the instance cannot place its overlay storage on the instance's own
+overlay root file system.
+
+**Fix:** keep the tmpfs mounts of `/var/lib/docker` and `/var/lib/containerd` (with `exec`) in
+`.config/molecule/config.yml`; they need about 1 GB of free memory while the monitoring scenario
+runs Uptime Kuma.
+
+## Molecule: `The container name "/lab-<role>-<platform>" is already in use`
+
+**Cause:** two runs of the same role's scenario at the same time on one machine, for example
+`--platform-name lab-docker-debian13` and `--platform-name lab-docker-ubuntu2404` in two
+terminals. Molecule keeps one state per scenario on the machine, so one run acts on the
+other run's instance. (CI runs each role and platform on its own runner.)
+
+**Fix:** run the platforms of one role one after the other, or both in one run
+(`task molecule ROLE=<role>`); `molecule destroy` in `ansible/roles/<role>` (with
+`MOLECULE_ROLE=<role>`) removes the leftovers. Scenarios of different roles can run at the same
+time.
+
+## The docker role stops with `Remove docker.io ... first`
+
+**Cause:** a Docker package of the distribution (`docker.io`, `containerd`, `runc`,
+`podman-docker`, ...) is installed; it conflicts with Docker's own packages. The role does not
+remove it, because that would stop its containers.
+
+**Fix:** move or stop those containers, then `sudo apt-get purge docker.io containerd runc` (the
+packages the message names) and run the role again.
+
+## An upload with the deploy key fails
+
+**Cause and fix**, by the message of `ssh` or `rsync`:
+
+- `Permission denied (publickey)`: the key is not in `deploy_target_authorized_keys`, the
+  connection does not come from an address in its `from` list (through a tunnel it comes from
+  127.0.0.1 or ::1), or the upload account is not in the SSH group of `AllowGroups`
+  (`deploy_target_ssh_groups`).
+- `rrsync error: reading from write-only server is not allowed`, `SSH_ORIGINAL_COMMAND does not
+  run rsync` or `option --delete... has been disabled on this server`: the key can only write
+  into the spool directory with rsync, without deleting; send the files to `deploy@<host>:` with
+  plain `rsync` options (`--perms --chmod=F640`).
+- The upload succeeds but nothing deploys: the `.ready` marker is missing (it must be sent last,
+  in a second rsync call) or the path unit has stopped; see the [runbook](runbook.md).
+
 ## Still stuck?
 
 Search the issues, then ask in the organization's

@@ -1,6 +1,7 @@
 # A host with systemd as PID 1 that stands in for a virtual machine: the docker_host module
-# (tofu/modules/docker_host) builds it for the environments that run on Docker, and a Molecule
-# scenario can build the same file. The build argument BASE selects the operating system:
+# (tofu/modules/docker_host) builds it for the environments that run on Docker, and the Molecule
+# scenarios of the roles in ansible/roles build the same file (.config/molecule/config.yml). The
+# build argument BASE selects the operating system:
 #   debian13   -> Debian 13 "trixie" (default)
 #   ubuntu2404 -> Ubuntu 24.04 "noble"
 # Both base images are pinned by digest (pulled and checked 2026-10-21); Dependabot's docker
@@ -21,7 +22,12 @@ ENV container=docker \
 # sudo for become, iproute2 for the network facts and CA certificates for HTTPS downloads. Each
 # role installs everything else, so a missing package shows up here and not first on a real
 # host. Units that need hardware or a console are masked, so that systemd reports "running"
-# once it has booted; /etc/machine-id is removed, so each container gets its own.
+# once it has booted; /etc/machine-id is removed, so each container gets its own. Docker sets up
+# the network before systemd starts, so systemd-networkd-wait-online is masked as well: it would
+# find no interface to wait for and hold every unit ordered after network-online.target (Docker,
+# node_exporter) for two minutes before it fails. The base images' /usr/sbin/policy-rc.d, which
+# stops packages from starting their services, is removed: a package installed by a role starts
+# its service as it does on a virtual machine.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -33,9 +39,10 @@ RUN apt-get update \
         systemd-sysv \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
-    && rm -f /etc/machine-id /var/lib/dbus/machine-id \
+    && rm -f /etc/machine-id /var/lib/dbus/machine-id /usr/sbin/policy-rc.d \
     && systemctl mask getty.target console-getty.service systemd-firstboot.service \
-        systemd-udevd.service systemd-udev-trigger.service systemd-modules-load.service
+        systemd-udevd.service systemd-udev-trigger.service systemd-modules-load.service \
+        systemd-networkd-wait-online.service
 
 # Healthy once systemd has finished booting ("degraded" means booted with a failed unit). The
 # docker_host module waits for this, so a host that cannot boot fails the apply, not the first

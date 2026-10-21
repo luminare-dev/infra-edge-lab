@@ -1,0 +1,62 @@
+- name: Install rsync (with rrsync) and the packages of the deploy script
+  ansible.builtin.apt:
+    name: "{{ deploy_target_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Look for rrsync
+  ansible.builtin.stat:
+    path: "{{ deploy_target_rrsync_path }}"
+    get_checksum: false
+  register: __deploy_target_rrsync
+
+- name: Require rrsync (the forced command of every upload key)
+  ansible.builtin.assert:
+    that:
+      - __deploy_target_rrsync.stat.exists
+      - __deploy_target_rrsync.stat.executable
+    fail_msg: >-
+      {{ deploy_target_rrsync_path }} does not exist or is not executable. rsync ships rrsync there
+      on Debian 13 and Ubuntu 24.04; set deploy_target_rrsync_path if it lives elsewhere.
+    quiet: true
+
+- name: Create the SSH groups of the upload account
+  ansible.builtin.group:
+    name: "{{ item }}"
+    system: true
+    state: present
+  loop: "{{ deploy_target_ssh_groups }}"
+
+# Shell /bin/sh: sshd runs the forced command through the login shell, so nologin would block
+# it. The password field "*" allows key logins only (a locked "!" account is refused by sshd
+# without PAM). The supplementary groups are exactly deploy_target_ssh_groups (no sudo, no docker).
+- name: Create the upload account
+  ansible.builtin.user:
+    name: "{{ deploy_target_user }}"
+    shell: /bin/sh
+    groups: "{{ deploy_target_ssh_groups }}"
+    append: false
+    system: true
+    create_home: true
+    home: "/home/{{ deploy_target_user }}"
+    password: "*"
+    state: present
+
+# ~/.ssh and authorized_keys belong to root, so the upload account can never change its own keys
+# (sshd accepts root-owned files that are not writable by group or others).
+- name: Create the SSH directory of the upload account (owned by root)
+  ansible.builtin.file:
+    path: "/home/{{ deploy_target_user }}/.ssh"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write authorized_keys (exactly the configured keys, each restricted to rrsync)
+  ansible.builtin.template:
+    src: authorized_keys.j2
+    dest: "/home/{{ deploy_target_user }}/.ssh/authorized_keys"
+    owner: root
+    group: root
+    mode: "0644"

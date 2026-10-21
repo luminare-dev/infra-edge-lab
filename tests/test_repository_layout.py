@@ -56,6 +56,7 @@ class GitignoreTest(unittest.TestCase):
         "tofu/envs/lab/lab.auto.tfvars",
         "tofu/envs/demo/demo.auto.tfvars.json",
         "ansible/inventories/lab/hosts.yml",
+        "ansible/collections/ansible_collections/community/docker/MANIFEST.json",
         "secrets/lab.env",
         "secrets/lab.enc.env.bak",
         "group_vars/all.dec.yaml",
@@ -67,6 +68,9 @@ class GitignoreTest(unittest.TestCase):
         "tofu/envs/lab/encryption.tofu",
         "tofu/envs/lab/.terraform.lock.hcl",
         "ansible/inventories/lab/group_vars/all.sops.yaml",
+        "ansible/requirements.yml",
+        "ansible/ansible.cfg",
+        "ansible/roles/docker/tasks/main.yml",
         ".sops.yaml",
         "secrets/lab.enc.env",
         "secrets/lab-ci.enc.env",
@@ -204,7 +208,7 @@ class PreCommitTest(unittest.TestCase):
         text = read(".pre-commit-config.yaml")
         hooks = set(re.findall(r"(?m)^      - id: (\S+)$", text))
         expected = {"end-of-file-fixer", "trailing-whitespace", "shellcheck", "gitleaks-system", "yamllint",
-                    "sops-encrypted", "tofu-fmt", "tflint"}
+                    "sops-encrypted", "tofu-fmt", "tflint", "ansible-lint"}
         self.assertLessEqual(expected, hooks)
         self.assertIn("sops filestatus", text)
         self.assertIn(r"files: ^secrets/.*\.enc\.env$", text)

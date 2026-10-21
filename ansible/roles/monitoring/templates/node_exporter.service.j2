@@ -1,0 +1,41 @@
+# {{ ansible_managed }}
+[Unit]
+Description=node_exporter host metrics on {{ __monitoring_node_exporter_listen }}
+Documentation=https://github.com/prometheus/node_exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User={{ __monitoring_node_exporter_user }}
+Group={{ __monitoring_node_exporter_user }}
+ExecStart={{ __monitoring_node_exporter_binary }} \
+    --web.listen-address={{ __monitoring_node_exporter_listen }} \
+    --collector.textfile.directory={{ monitoring_node_exporter_textfile_dir }}{% for arg in monitoring_node_exporter_extra_args %} \
+    {{ arg }}{% endfor %}
+
+Restart=on-failure
+RestartSec=5s
+
+# Read-only access to the system it measures; no privileges, no writable paths.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

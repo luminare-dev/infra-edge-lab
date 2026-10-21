@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+# deploy_target: upload keys. restrict turns off pty allocation and agent, port and X11
+# forwarding; the forced command lets each key only write into {{ deploy_target_spool_dir }}.
+{% for item in deploy_target_authorized_keys %}
+restrict,{% if item.from | default([]) | length > 0 %}from="{{ item.from | join(',') }}",{% endif %}command="{{ __deploy_target_forced_command }}" {{ item.key }} {{ item.comment }}
+{% endfor %}

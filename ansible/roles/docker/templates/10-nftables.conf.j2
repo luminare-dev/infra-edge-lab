@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# docker role: /etc/nftables.conf starts with "flush ruleset", which also removes the rules that
+# Docker added for its networks and published ports. PartOf= makes systemd restart Docker
+# whenever nftables.service is restarted or stopped; with live-restore the containers keep running
+# while dockerd restarts and adds its rules again. After= orders the start at boot the same way.
+[Unit]
+After=nftables.service
+PartOf=nftables.service

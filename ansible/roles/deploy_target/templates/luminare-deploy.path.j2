@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+# deploy_target: starts {{ deploy_target_unit_name }}.service while a *.ready marker exists in the spool
+# directory. The uploader sends the marker last, so a half-written upload never matches.
+[Unit]
+Description=Watch {{ deploy_target_spool_dir }} for completed uploads
+
+[Path]
+PathExistsGlob={{ deploy_target_spool_dir }}/*.ready
+Unit={{ deploy_target_unit_name }}.service
+
+[Install]
+WantedBy=paths.target

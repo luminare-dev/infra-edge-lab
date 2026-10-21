@@ -1,0 +1,12 @@
+# Docker Engine for monitoring and other container hosts (never for game servers).
+- name: Check the host and the settings before any change
+  ansible.builtin.import_tasks: assert.yml
+
+- name: Install and configure Docker Engine
+  ansible.builtin.import_tasks: install.yml
+
+- name: Write the forward rules for Docker's networks
+  ansible.builtin.import_tasks: firewall.yml
+
+- name: Add the docker users
+  ansible.builtin.import_tasks: users.yml

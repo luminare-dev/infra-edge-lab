@@ -1,0 +1,34 @@
+- name: Install the deploy script
+  ansible.builtin.copy:
+    src: "{{ deploy_target_script_src }}"
+    dest: "{{ deploy_target_script_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the deploy service unit
+  ansible.builtin.template:
+    src: luminare-deploy.service.j2
+    dest: "{{ __deploy_target_service_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+# PathExistsGlob (not PathChanged): the uploader sends the archive and its checksum first and the
+# empty *.ready marker last, so a half-written upload never starts the service.
+- name: Write the path unit that watches for *.ready markers
+  ansible.builtin.template:
+    src: luminare-deploy.path.j2
+    dest: "{{ __deploy_target_path_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the path unit
+
+- name: Enable and start the path unit
+  ansible.builtin.systemd_service:
+    name: "{{ deploy_target_unit_name }}.path"
+    enabled: true
+    state: started
+    daemon_reload: true

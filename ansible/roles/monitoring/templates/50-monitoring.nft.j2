@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+# monitoring role: node_exporter on {{ __monitoring_node_exporter_listen }} for the allowed sources.
+# Included by /etc/nftables.conf after table inet filter (input policy drop): accept rules only.
+{% set v4 = monitoring_node_exporter_allowed_sources | reject('search', ':') | list %}
+{% set v6 = monitoring_node_exporter_allowed_sources | select('search', ':') | list %}
+{% if v4 | length > 0 %}
+add rule inet filter input ip saddr { {{ v4 | join(', ') }} } tcp dport {{ monitoring_node_exporter_port }} accept
+{% endif %}
+{% if v6 | length > 0 %}
+add rule inet filter input ip6 saddr { {{ v6 | join(', ') }} } tcp dport {{ monitoring_node_exporter_port }} accept
+{% endif %}

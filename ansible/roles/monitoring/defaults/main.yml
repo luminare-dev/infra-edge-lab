@@ -1,0 +1,33 @@
+# Defaults of the monitoring role. Every variable is described, with its type, in
+# meta/argument_specs.yml; the tables in README.md and docs/configuration.md are generated from it.
+
+# node_exporter (host metrics), installed from its release archive with a pinned checksum
+monitoring_node_exporter_enabled: true
+monitoring_node_exporter_version: "1.12.1"
+monitoring_node_exporter_checksums:
+  amd64: b51d8a76aa2a9156a55d501aca6276fae09e262259a5e4e831d2c2222f084e63
+  arm64: ad35b605f9954b9f1ffddf5ba054bdc5a98d790b9eae5291e1eeb83f1ecbd0e7
+monitoring_node_exporter_download_url: https://github.com/prometheus/node_exporter/releases/download
+monitoring_node_exporter_listen_address: 127.0.0.1
+monitoring_node_exporter_port: 9100
+monitoring_node_exporter_textfile_dir: /var/lib/node_exporter/textfile
+monitoring_node_exporter_extra_args: []
+
+# Sources that may reach node_exporter through the firewall (only with a private listen address)
+monitoring_node_exporter_allowed_sources: []
+monitoring_firewall_manage: false
+monitoring_firewall_reload: true
+
+# Uptime Kuma (status checks of other hosts) in a container; needs the docker role first
+monitoring_uptime_kuma_enabled: false
+# yamllint disable-line rule:line-length
+monitoring_uptime_kuma_image: "louislam/uptime-kuma:2.5.6-slim@sha256:5db97dbbef610276e1699f3ece586c3509c8fd35de75d45ff5109761a1b377dc"
+monitoring_uptime_kuma_container_name: uptime-kuma
+monitoring_uptime_kuma_bind_address: 127.0.0.1
+monitoring_uptime_kuma_port: 3001
+monitoring_uptime_kuma_data_volume: uptime-kuma-data
+monitoring_uptime_kuma_checklist_path: /etc/uptime-kuma/monitors.md
+
+# Monitors to create in Uptime Kuma (rendered into the checklist)
+monitoring_monitors: []
+monitoring_external_probes: []

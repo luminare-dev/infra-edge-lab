@@ -1,0 +1,87 @@
+- name: Gather the facts the role needs
+  ansible.builtin.setup:
+    gather_subset:
+      - min
+  when: ansible_facts['distribution'] is not defined or ansible_facts['architecture'] is not defined
+
+- name: Check the platform (Debian 13 or Ubuntu 24.04 on x86_64 or arm64)
+  ansible.builtin.assert:
+    that:
+      - >-
+        (ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == '13')
+        or (ansible_facts['distribution'] == 'Ubuntu' and ansible_facts['distribution_version'] == '24.04')
+      - __docker_apt_arch in ['amd64', 'arm64']
+    fail_msg: >-
+      The docker role supports Debian 13 and Ubuntu 24.04 on x86_64 or arm64; this host is
+      {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }} on
+      {{ ansible_facts['architecture'] }}. Nothing was changed.
+    quiet: true
+
+- name: Refuse hosts that must not run Docker
+  ansible.builtin.assert:
+    that:
+      - group_names | intersect(docker_forbidden_groups) | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} is in {{ group_names | intersect(docker_forbidden_groups) | join(', ') }},
+      and hosts in docker_forbidden_groups must not run Docker (a game server stays free of
+      container networking that bypasses its firewall). Nothing was changed.
+    quiet: true
+
+- name: Check the settings
+  ansible.builtin.assert:
+    that:
+      - docker_default_bind_ip is match(__docker_private_address_re)
+      - docker_packages | length > 0
+      - docker_apt_key_checksum is match('^sha256:[0-9a-f]{64}$')
+      - docker_users | reject('match', '^[a-z_][a-z0-9_-]*$') | list | length == 0
+    fail_msg: >-
+      docker_default_bind_ip must be a loopback or private address (got
+      "{{ docker_default_bind_ip }}"), docker_packages must not be empty, docker_apt_key_checksum
+      must be "sha256:" followed by 64 hex digits, and docker_users must hold user names.
+      Nothing was changed.
+    quiet: true
+
+- name: Read the list of installed packages
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Refuse distribution packages that conflict with Docker's packages
+  ansible.builtin.assert:
+    that:
+      - __docker_conflicting_packages | select('in', ansible_facts['packages']) | list | length == 0
+    fail_msg: >-
+      Remove {{ __docker_conflicting_packages | select('in', ansible_facts['packages']) | join(', ') }}
+      first (apt-get purge), after stopping or moving their containers: they conflict with Docker's
+      packages. Nothing was changed.
+    quiet: true
+
+# The drop-in is written when docker_firewall_manage is true or /etc/nftables.d exists, and it is
+# checked together with /etc/nftables.conf by nft. Check both here, before anything changes.
+- name: Look for the nftables drop-in directory, /etc/nftables.conf and nft
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+  loop:
+    - "{{ __docker_nft_dir }}"
+    - /etc/nftables.conf
+    - /usr/sbin/nft
+  register: __docker_nft_stat
+
+- name: Decide whether the role writes the firewall drop-in
+  ansible.builtin.set_fact:
+    __docker_firewall_write: "{{ docker_firewall_manage | bool or __docker_nft_stat.results[0].stat.exists }}"
+
+- name: Require /etc/nftables.conf and nft when the role writes the drop-in
+  ansible.builtin.assert:
+    that:
+      - __docker_nft_stat.results[1].stat.exists
+      - __docker_nft_stat.results[2].stat.exists
+    fail_msg: >-
+      The role writes {{ __docker_nft_dropin }} ({{ 'docker_firewall_manage is true'
+      if docker_firewall_manage | bool else __docker_nft_dir ~ ' exists' }}) and checks it with
+      "nft --check" together with /etc/nftables.conf, but /etc/nftables.conf or nft is missing.
+      Apply the firewall of the luminare.infra_edge base role first (nftables installed,
+      /etc/nftables.conf defines table inet filter and includes /etc/nftables.d/*.nft).
+      Nothing was changed.
+    quiet: true
+  when: __docker_firewall_write | bool

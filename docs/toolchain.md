@@ -95,19 +95,38 @@ same as GitHub's asset digest and the download checked on 2026-10-21). Cloudflar
 repository lists only its newest release (2026.10.2 on 2026-10-21), so it cannot install a
 pinned older version.
 
+## What the roles download
+
+The roles in `ansible/roles` download these files on the managed hosts, each checked against a
+value pinned in the role (checked on 2026-10-21). Dependabot does not see them; they are updated
+by hand like the binary tools ([runbook](runbook.md#procedure-upgrade-node_exporter-or-uptime-kuma)).
+`tests/test_ansible.py` fails when a checksum in the role defaults is missing on this page.
+
+| What | Version | Pinned in | File or image | sha256 or digest | Checksum source |
+|---|---|---|---|---|---|
+| node_exporter | 1.12.1 | `monitoring` defaults | `node_exporter-1.12.1.linux-amd64.tar.gz` | `b51d8a76aa2a9156a55d501aca6276fae09e262259a5e4e831d2c2222f084e63` | `sha256sums.txt` of the [release](https://github.com/prometheus/node_exporter/releases/tag/v1.12.1), equal to GitHub's asset digest and the download |
+| node_exporter | 1.12.1 | `monitoring` defaults | `node_exporter-1.12.1.linux-arm64.tar.gz` | `ad35b605f9954b9f1ffddf5ba054bdc5a98d790b9eae5291e1eeb83f1ecbd0e7` | the same |
+| Uptime Kuma | 2.5.6 (`slim`) | `monitoring` defaults | `louislam/uptime-kuma:2.5.6-slim` | `sha256:5db97dbbef610276e1699f3ece586c3509c8fd35de75d45ff5109761a1b377dc` (image index, amd64 and arm64) | `docker buildx imagetools inspect` and Docker Hub |
+| Docker's APT signing key | key `9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88` | `docker` defaults | `https://download.docker.com/linux/{debian,ubuntu}/gpg` (the same file) | `1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570` | the downloaded file; fingerprint shown by `gpg --show-keys` |
+| BusyBox (test image of the docker role's Molecule scenario) | 1.37 | `ansible/roles/docker/molecule/default/verify.yml` | `busybox:1.37` | `sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e` (image index) | `docker buildx imagetools inspect` |
+
+Docker Engine itself comes from Docker's signed APT repository (newest `stable` release on the
+first run), the other packages from the distribution.
+
 ## Python
 
 Python **3.12** is the `python3` of the `ubuntu-24.04` runner and the oldest version
 ansible-core 2.21 supports. The hash-pinned install was also tested with Python 3.13.
 
 The table names the file that pins each package instead of repeating its version, so a
-Dependabot update of a requirements file needs no edit on this page. At this version
-`scripts/run_tests.sh` installs the Ansible tools and checks their installed versions against
-the pins; no playbook, role or Molecule scenario uses them yet.
+Dependabot update of a requirements file needs no edit on this page. `scripts/run_tests.sh`
+installs the Ansible tools, checks their installed versions against the pins and runs
+ansible-lint; the Molecule jobs of CI and `task molecule` use the same file.
 
 | Package | Pinned in | Purpose |
 |---|---|---|
 | ansible-core | `requirements-test.in`, compiled into `requirements-test.txt` | Ansible controller |
+| ansible | `requirements-test.in`, compiled into `requirements-test.txt` | the community collections (`community.docker`, `ansible.posix`, `community.sops`, ...) for ansible-lint, Molecule and the roles; `ansible/requirements.yml` pins the same versions ([ADR 0016](adr/0016-collections-from-git-tags-and-one-pinned-bundle.md)) |
 | ansible-lint | `requirements-test.in`, compiled into `requirements-test.txt` | Ansible linter (production profile) |
 | molecule | `requirements-test.in`, compiled into `requirements-test.txt` | role test framework |
 | molecule-plugins (`docker` extra) | `requirements-test.in`, compiled into `requirements-test.txt` | Molecule Docker driver |
@@ -117,7 +136,7 @@ the pins; no playbook, role or Molecule scenario uses them yet.
 | click | `click==8.2.1` in the same command | command-line library of pip-tools, held below 8.3 (see below) |
 
 `requirements-test.txt` is generated from `requirements-test.in` by pip-compile and lists every
-dependency with its hashes (45 packages when it was compiled on 2026-10-21).
+dependency with its hashes (46 packages when it was compiled on 2026-10-21).
 `requirements-dev.txt` comes from the template and is pinned by hand. Install either file with
 `pip install --require-hashes --only-binary=:all: -r <file>`; `scripts/run_tests.sh` and
 `task venv` do this.
@@ -126,14 +145,14 @@ dependency with its hashes (45 packages when it was compiled on 2026-10-21).
 
 `.pre-commit-config.yaml` runs the quick checks as git hooks: end-of-file and trailing-whitespace
 fixes, shellcheck, gitleaks on the staged changes, yamllint, the check that every
-`secrets/*.enc.env` is encrypted (`sops filestatus`), `tofu fmt` and TFLint. It is optional; CI
-runs the same checks in its own jobs. Install pre-commit (tested with 4.7.0, for example `pipx install pre-commit`), run
-`task venv` and put `.venv/bin` on the PATH, then `pre-commit install`. The hooks of other
-repositories are pinned to a commit SHA with the tag in a comment (`pre-commit autoupdate --freeze`
-writes them so), and pre-commit installs them into its own cache on the first run:
-pre-commit-hooks v6.0.0, shellcheck-py v0.11.0.1 (shellcheck 0.11.0) and the `gitleaks-system`
-hook of gitleaks v8.30.1, which runs the gitleaks binary of the table above. The other hooks run
-the tools of this page.
+`secrets/*.enc.env` is encrypted (`sops filestatus`), `tofu fmt`, TFLint and ansible-lint. It is
+optional; CI runs the same checks in its own jobs. Install pre-commit (tested with 4.7.0, for
+example `pipx install pre-commit`), run `task venv` and put `.venv/bin` on the PATH, then
+`pre-commit install`. The hooks of other repositories are pinned to a commit SHA with the tag in a
+comment (`pre-commit autoupdate --freeze` writes them so), and pre-commit installs them into its own
+cache on the first run: pre-commit-hooks v6.0.0, shellcheck-py v0.11.0.1 (shellcheck 0.11.0) and the
+`gitleaks-system` hook of gitleaks v8.30.1, which runs the gitleaks binary of the table above. The
+other hooks run the tools of this page.
 
 ## Updating a pin
 

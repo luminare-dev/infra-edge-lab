@@ -4,6 +4,10 @@
 #
 #    pip-compile --allow-unsafe --generate-hashes --output-file=requirements-test.txt --strip-extras requirements-test.in
 #
+ansible==14.5.0 \
+    --hash=sha256:245623ccc2d31d0f6f4bdb63168d550cad305fb032cc43d96e8f61ce8ab0ba84 \
+    --hash=sha256:daeafe730cb2cf82ebe1a1a30960dcdfc0d624c497eb96d57d81713ec19ef19f
+    # via -r requirements-test.in
 ansible-compat==26.10.0 \
     --hash=sha256:700f0778fbb348daf6ee58941871e8ca77a987702993e8bf7895761d036d6450 \
     --hash=sha256:b0fcc0b9585611045b4b91268d3b4337c9159ae0dc550b69a553a33af48af826
@@ -15,6 +19,7 @@ ansible-core==2.21.5 \
     --hash=sha256:65bb3148c58ebb843cd5074004c805f404f152114d98476dd823324616c9c6cb
     # via
     #   -r requirements-test.in
+    #   ansible
     #   ansible-compat
     #   ansible-lint
     #   molecule

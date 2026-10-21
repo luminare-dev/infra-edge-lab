@@ -1,0 +1,64 @@
+# Test fixtures: an SSH server that admits only the members of sshusers (as the base role of
+# luminare.infra_edge configures it), the game server user and group that the
+# luminare.gameserver.fxserver role would create, and a throwaway key pair for the uploader,
+# generated in the instance (no key material in the repository).
+- name: Prepare
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Create the sshd drop-in directory
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Admit only the SSH group, with keys only
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/50-molecule.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          AllowGroups sshusers
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+
+    - name: Install the SSH server and client
+      ansible.builtin.apt:
+        name:
+          - openssh-server
+          - openssh-client
+        state: present
+        update_cache: true
+
+    - name: Start the SSH server
+      ansible.builtin.systemd_service:
+        name: ssh.service
+        state: started
+
+    - name: Wait for the SSH server
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 22
+        timeout: 60
+
+    - name: Create the game server group
+      ansible.builtin.group:
+        name: fxserver
+        system: true
+
+    - name: Create the game server user
+      ansible.builtin.user:
+        name: fxserver
+        group: fxserver
+        system: true
+        shell: /usr/sbin/nologin
+        home: /opt/fxserver
+        create_home: true
+
+    - name: Generate the uploader's key pair
+      ansible.builtin.command:
+        cmd: ssh-keygen -q -t ed25519 -N "" -C molecule-ci -f /root/ci-key
+        creates: /root/ci-key

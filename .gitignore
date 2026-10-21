@@ -37,8 +37,10 @@ override.tofu
 *.tfvars
 *.tfvars.json
 
-# Ansible inventories are generated from the OpenTofu outputs
+# Ansible inventories are generated from the OpenTofu outputs; collections are installed from
+# ansible/requirements.yml into ansible/collections (ansible.cfg)
 ansible/inventories/*/hosts.yml
+ansible/collections/
 
 # Secrets: in secrets/ only the README, examples and SOPS-encrypted dotenv files (*.enc.env)
 # are committed. Decrypted copies never are, wherever they are written.

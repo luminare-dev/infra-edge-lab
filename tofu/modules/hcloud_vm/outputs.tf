@@ -39,3 +39,12 @@ output "primary_ip_id" {
   description = "ID of the primary IPv4 address, or null when use_primary_ip is false."
   value       = one(hcloud_primary_ip.ipv4[*].id)
 }
+
+output "protection" {
+  description = "Protection flags: delete and rebuild protection of the server, and delete protection of the primary IP (null without one)."
+  value = {
+    delete            = hcloud_server.this.delete_protection
+    rebuild           = hcloud_server.this.rebuild_protection
+    primary_ip_delete = one(hcloud_primary_ip.ipv4[*].delete_protection)
+  }
+}

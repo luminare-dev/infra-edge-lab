@@ -53,6 +53,11 @@ run "defaults" {
     condition     = hcloud_server.this.delete_protection == false && hcloud_server.this.rebuild_protection == false
     error_message = "A demo server should not be protected by default."
   }
+
+  assert {
+    condition     = output.protection == { delete = false, rebuild = false, primary_ip_delete = null }
+    error_message = "The protection output should report both server flags off and no primary IP."
+  }
 }
 
 run "protection_flags_are_equal" {
@@ -72,6 +77,11 @@ run "protection_flags_are_equal" {
   assert {
     condition     = hcloud_server.this.delete_protection == true
     error_message = "protect = true should turn on delete protection."
+  }
+
+  assert {
+    condition     = output.protection.delete == true && output.protection.rebuild == true
+    error_message = "The protection output should report both server flags."
   }
 }
 
@@ -487,6 +497,11 @@ run "primary_ip_survives_the_server" {
   assert {
     condition     = hcloud_primary_ip.ipv4[0].delete_protection == true
     error_message = "The primary IP of a protected server should be protected as well."
+  }
+
+  assert {
+    condition     = output.protection.primary_ip_delete == true
+    error_message = "The protection output should report the delete protection of the primary IP."
   }
 
   assert {

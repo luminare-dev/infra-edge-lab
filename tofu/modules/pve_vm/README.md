@@ -64,6 +64,7 @@ node), and `PROXMOX_VE_API_HEADERS` when an access proxy sits in front of the AP
 | `vm_id` | VM ID. |
 | `name` | Name. |
 | `ipv4` | Address without the prefix length. |
+| `protection` | Whether the protection flag is set. |
 
 ## Tests
 

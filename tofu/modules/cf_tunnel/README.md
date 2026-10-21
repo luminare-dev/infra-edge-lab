@@ -80,6 +80,7 @@ hostname must be `<label>.<zone>` with its label in `dns_names`, and a rule with
 | `tunnel_cname` | `<tunnel_id>.cfargotunnel.com`. |
 | `hostnames` | Hostnames that point at the tunnel, sorted. |
 | `address_hostnames` | Hostnames of the DNS-only records, sorted. |
+| `records` | Every record of the module keyed by hostname, with `type`, `proxied` and `comment`; the guard tests of the environments read it. |
 
 ## Tests
 

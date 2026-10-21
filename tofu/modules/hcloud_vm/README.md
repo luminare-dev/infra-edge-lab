@@ -88,6 +88,7 @@ but this lab.
 | `public_ports` | What the public firewall lets in: `icmp`, plus `tcp/<game_port>` and `udp/<game_port>` with `game_port_open`. |
 | `ci_ssh_firewall_id` | ID of the CI firewall, or null. |
 | `primary_ip_id` | ID of the primary IP, or null. |
+| `protection` | `delete` and `rebuild` protection of the server, `primary_ip_delete` of the primary IP (null without one). |
 
 ## Tests
 

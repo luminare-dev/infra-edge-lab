@@ -59,6 +59,39 @@ runtimes), or the host is slow.
 namespace, or skip that step: `task tofu STEPS='fmt validate tflint iac test compat'`. On a slow host
 raise the module's `wait_timeout`.
 
+## `TF_VAR_state_passphrase must hold the state passphrase`, `depends on var.state_passphrase which is not available` or `Failed to request input from user for variable var.state_passphrase`
+
+**Cause:** every environment encrypts its state and plan files, so `tofu init`, `tofu plan` and
+`tofu apply` need the passphrase, at least 16 characters. `tofu test` gets a fixed one from the
+test files and needs none.
+
+**Fix:** for `lab`, `demo` and `showcase`, put `TF_VAR_state_passphrase` into
+`secrets/<env>.enc.env`, which `task init` and `task plan` read. For `local`, export a random one
+per run:
+
+```bash
+export TF_VAR_state_passphrase="$(openssl rand -base64 32)"
+task init ENV=local
+```
+
+## `AWS_ENDPOINT_URL_S3 must hold the endpoint of the state bucket`
+
+**Cause:** `task init` or `task plan` would use the remote backend of `lab`, `demo` or
+`showcase`, but the endpoint of the bucket is not set. Without it the S3 backend sends its
+requests to AWS instead of R2, so the script stops first.
+
+**Fix:** add `AWS_ENDPOINT_URL_S3=https://<account_id>.r2.cloudflarestorage.com` to
+`secrets/<env>.enc.env` (`sops edit secrets/<env>.enc.env`), or work on a local state file with
+`task init ENV=<env> BACKEND=local`.
+
+## `Backend initialization required` after switching `BACKEND`
+
+**Cause:** the environment was initialised for the other backend (the remote one or
+`BACKEND=local`).
+
+**Fix:** run `task init ENV=<env>` again with the backend you want; it runs
+`tofu init -reconfigure`.
+
 ## Still stuck?
 
 Search the issues, then ask in the organization's

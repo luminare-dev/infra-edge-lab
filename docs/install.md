@@ -50,14 +50,27 @@ markdownlint-cli2, that is not on the `PATH` is counted as skipped. `task lint` 
 repository check; each one prints no finding. `task tofu` runs the OpenTofu checks; every
 `tofu test` ends with `Success!` and every validation with `The configuration is valid.` The
 OpenTofu checks download the providers named in the lock files into `.terraform/` of each
-module, one copy per module: about 700 MB unpacked, because the Cloudflare provider (about
-190 MB) is used by three modules. With `TF_PLUGIN_CACHE_DIR` set to a directory, every provider
-is stored there once, about 320 MB in all.
+module and environment, one copy per directory: about 1.5 GB unpacked, because the Cloudflare
+provider (about 190 MB) is used by three modules and three environments. With
+`TF_PLUGIN_CACHE_DIR` set to a directory, every provider is stored there once, about 320 MB in
+all.
+
+To try an environment without any account, initialise and plan `local` (it needs the Docker
+daemon only when it is applied):
+
+```bash
+export TF_VAR_state_passphrase="$(openssl rand -base64 32)"
+task init ENV=local
+task plan ENV=local
+```
 
 ## Uninstall
 
 Delete the clone. Inside it, the tasks create `.venv/` (Python tools), `.task/` (go-task's
-checksum cache) and `tofu/modules/*/.terraform/` (provider downloads). The `docker_host`
+checksum cache), `tofu/modules/*/.terraform/` and `tofu/envs/*/.terraform/` (provider
+downloads), and an environment with a local state keeps `terraform.tfstate` (and
+`backend_override.tf` after `BACKEND=local`) in its folder. Before deleting a state, destroy what
+it holds (`tofu -chdir=tofu/envs/local destroy` with the same passphrase). The `docker_host`
 integration test removes its containers, network and image when it ends; the base images
 `debian:trixie` and `ubuntu:24.04` stay in the Docker image store (`docker image rm` removes
 them). Outside it, two download caches in your home directory remain: pip's

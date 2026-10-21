@@ -1,5 +1,7 @@
 # Task runner (https://taskfile.dev; go-task version in docs/toolchain.md). "task --list" shows
-# every target. "task lint", "task test" and "task tofu" run the checks and tests that CI runs.
+# every target. "task lint", "task test" and "task tofu" run the checks and tests that CI runs;
+# "task init", "task plan" and "task test" with ENV=<local|lab|demo|showcase> work on one
+# environment under tofu/envs (scripts/tofu_env.sh).
 version: "3"
 
 vars:
@@ -44,11 +46,41 @@ tasks:
       - tofu fmt -check -recursive tofu
 
   test:
-    desc: Run the tests (the test command of CI)
+    desc: >-
+      Run the tests (the test command of CI); with ENV=<local|lab|demo|showcase>, the mocked
+      tofu tests of that environment instead
     env:
       TEST_VENV: "{{.VENV}}"
     cmds:
-      - bash scripts/run_tests.sh
+      - '{{if .ENV}}bash scripts/tofu_env.sh test {{.ENV}} {{.CLI_ARGS}}{{else}}bash scripts/run_tests.sh{{end}}'
+
+  init:
+    desc: >-
+      Initialise one environment (ENV=local|lab|demo|showcase); BACKEND=local keeps the state of
+      lab, demo or showcase in a local file instead of the remote backend (git-ignored
+      backend_override.tf). Needs TF_VAR_state_passphrase and, for the remote backend,
+      AWS_ENDPOINT_URL_S3, from secrets/<env>.enc.env (or the SOPS file named by SECRETS) when it
+      exists
+    requires:
+      vars:
+        - name: ENV
+          enum: [local, lab, demo, showcase]
+    env:
+      BACKEND: '{{.BACKEND | default "remote"}}'
+    cmds:
+      - bash scripts/tofu_env.sh init {{.ENV}} {{.CLI_ARGS}}
+
+  plan:
+    desc: >-
+      Plan one environment (ENV=local|lab|demo|showcase; tofu plan arguments after "--"); a plan
+      never reads the tunnel token. Credentials come from secrets/<env>.enc.env (or the SOPS file
+      named by SECRETS) when it exists
+    requires:
+      vars:
+        - name: ENV
+          enum: [local, lab, demo, showcase]
+    cmds:
+      - bash scripts/tofu_env.sh plan {{.ENV}} {{.CLI_ARGS}}
 
   tofu:
     desc: >-

@@ -1,8 +1,11 @@
 # Dependabot version updates (https://docs.github.com/en/code-security/dependabot).
-# Keeps the SHA pins of the workflow actions and their "# vX.Y.Z" comments current, and the
-# hash-pinned Python tools in requirements-dev.txt. A 7-day cooldown lets a bad release surface
-# before it lands here. The pinned gitleaks and actionlint downloads (version + sha256 inputs in
-# the reusable workflows) are not seen by Dependabot; bump them by hand (PUBLISHING.md, monthly).
+# Keeps the SHA pins of the workflow actions and their "# vX.Y.Z" comments current, the
+# hash-pinned Python tools (requirements-dev.txt, and requirements-test.txt, which Dependabot
+# recompiles from requirements-test.in with pip-compile) and the OpenTofu providers of every
+# module and environment under tofu/ (ADR 0007). A 7-day cooldown lets a bad release surface
+# before it lands here. Every pull request title starts with a Conventional Commit type, so it
+# passes the PR-title check. The binary tools pinned by version and sha256 (docs/toolchain.md)
+# are not seen by Dependabot; bump them by hand once a month.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -34,3 +37,26 @@ updates:
     groups:
       dev-tools:
         patterns: ["*"]
+
+  # Until the first module or environment exists, these globs match no directory with a .tf
+  # file, so the Dependabot log may show this job without dependency files.
+  - package-ecosystem: opentofu
+    directories:
+      - /tofu/modules/*
+      - /tofu/envs/*
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+    labels: [dependencies]
+    groups:
+      providers:
+        patterns: ["*"]
+        # bpg/proxmox is below 1.0 and may break in a minor release: it gets its own pull request.
+        # The opentofu ecosystem names a provider "<namespace>/<name>" in lower case, without the
+        # registry host (dependabot-core opentofu/file_parser.rb), when the module sets its source.
+        exclude-patterns: ["bpg/proxmox"]

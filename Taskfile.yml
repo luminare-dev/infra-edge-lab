@@ -1,0 +1,51 @@
+# Task runner (https://taskfile.dev; go-task version in docs/toolchain.md). "task --list" shows
+# every target. "task lint" and "task test" run the checks and tests that CI runs.
+version: "3"
+
+vars:
+  # Python virtual environment for the hash-pinned tools; override with "task lint VENV=path".
+  VENV: '{{.VENV | default ".venv"}}'
+
+tasks:
+  default:
+    desc: List the tasks
+    silent: true
+    cmds:
+      - task --list
+
+  venv:
+    desc: Create the Python environment with the hash-pinned tools (requirements-dev.txt, requirements-test.txt)
+    sources:
+      - requirements-dev.txt
+      - requirements-test.txt
+    generates:
+      - "{{.VENV}}/pyvenv.cfg"
+    cmds:
+      - test -x "{{.VENV}}/bin/python" || python3 -m venv "{{.VENV}}"
+      - >-
+        "{{.VENV}}/bin/python" -m pip install --quiet --disable-pip-version-check
+        --require-hashes --only-binary=:all: -r requirements-dev.txt
+      - >-
+        "{{.VENV}}/bin/python" -m pip install --quiet --disable-pip-version-check
+        --require-hashes --only-binary=:all: -r requirements-test.txt
+
+  lint:
+    desc: Run the repository checks (CI lint-test and the secret scan, plus tofu fmt)
+    deps: [venv]
+    cmds:
+      - python3 scripts/forbidden_words.py
+      - python3 scripts/set_byline.py verify --expect studio
+      - python3 scripts/check_workflows.py
+      - '"{{.VENV}}/bin/yamllint" --strict .'
+      - npx --yes markdownlint-cli2@0.23.2 "**/*.md"
+      - actionlint
+      - '"{{.VENV}}/bin/zizmor" --offline --min-severity=low .github/workflows'
+      - gitleaks git --redact --config .gitleaks.toml .
+      - tofu fmt -check -recursive tofu
+
+  test:
+    desc: Run the tests (the test command of CI)
+    env:
+      TEST_VENV: "{{.VENV}}"
+    cmds:
+      - bash scripts/run_tests.sh

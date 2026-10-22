@@ -11,3 +11,36 @@ node_modules/
 .env.*
 !.env.example
 server.cfg
+
+# Tool caches: go-task checksums, ansible-lint and Molecule
+.task/
+.ansible/
+
+# OpenTofu: provider downloads, state and plan files. State belongs in the encrypted remote
+# backend; a local state file or a saved plan can hold secrets in clear text.
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
+*.tfplan.json
+crash.log
+crash.*.log
+# Override files change a root module locally (for example backend_override.tf switches an
+# environment to a local backend); they are never committed.
+override.tf
+override.tofu
+*_override.tf
+*_override.tofu
+
+# Ansible inventories are generated from the OpenTofu outputs
+ansible/inventories/*/hosts.yml
+
+# Secrets: in secrets/ only the README, examples and SOPS-encrypted dotenv files (*.enc.env)
+# are committed. Decrypted copies never are, wherever they are written.
+secrets/*
+!secrets/README.md
+!secrets/*.example
+!secrets/*.enc.env
+*.dec.*
+*.decrypted.*

@@ -13,7 +13,9 @@ The recipients are set by the creation rules in `.sops.yaml` at the repository r
 file that holds public age keys only; private keys never enter the repository. At this version
 the repository ships **no** encrypted file and no `.sops.yaml` yet; [env.example](env.example)
 lists the keys a file can hold. Values are read into the environment of one command
-(`sops exec-env secrets/<env>.enc.env '<command>'`) and never written to disk in clear text.
+(`sops exec-env secrets/<env>.enc.env '<command>'`) and never written to disk in clear text;
+`task init ENV=<env>` and `task plan ENV=<env>` do this themselves when the file exists
+([tofu/envs/README.md](../tofu/envs/README.md)).
 
 Only this README, `*.example` files and `*.enc.env` files can be committed here: `.gitignore`
 ignores everything else in this folder, and the unit tests fail if a committed `*.enc.env` file

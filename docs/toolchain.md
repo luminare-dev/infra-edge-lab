@@ -52,11 +52,12 @@ tar -xzf task_linux_amd64.tar.gz task && install -m 0755 task ~/.local/bin/task
 
 ## OpenTofu providers and the host image
 
-Each module under `tofu/modules/` pins its providers with a version constraint in `versions.tf`
-and commits a `.terraform.lock.hcl` with package checksums for `linux_amd64` and `darwin_arm64`
-and the registry's signed checksums of every platform's archive
-([ADR 0012](adr/0012-provider-pins-and-lock-files.md)). Versions were checked in the OpenTofu
-registry on 2026-10-21:
+Each module under `tofu/modules/` and each environment under `tofu/envs/` pins its providers
+with a version constraint in `versions.tf` and commits a `.terraform.lock.hcl` with package
+checksums for `linux_amd64` and `darwin_arm64` and the registry's signed checksums of every
+platform's archive ([ADR 0012](adr/0012-provider-pins-and-lock-files.md)). An environment locks
+the same version and checksums as the modules it calls; `tests/test_tofu.py` checks this.
+Versions were checked in the OpenTofu registry on 2026-10-21:
 
 | Provider | Constraint | Locked | Newest release on 2026-10-21 | Note |
 |---|---|---|---|---|
@@ -74,11 +75,13 @@ Dependabot skips the cooldown for security updates for the same reason; the test
 5.28.1 and with 5.25.0.
 
 `tofu test` and `tofu validate` also pass with the lowest version of each range
-(`cloudflare` 5.25.0, `hcloud` 1.69.0). After a constraint change, write the lock file again for
-both platforms:
+(`cloudflare` 5.25.0, `hcloud` 1.69.0), in the modules and in the environments. After a
+constraint change, write the lock files again for both platforms, in every module and
+environment that uses the provider:
 
 ```bash
 tofu -chdir=tofu/modules/<module> providers lock -platform=linux_amd64 -platform=darwin_arm64
+tofu -chdir=tofu/envs/<env> providers lock -platform=linux_amd64 -platform=darwin_arm64
 ```
 
 `images/systemd-host/Dockerfile` (the host image of the `docker_host` module) starts from

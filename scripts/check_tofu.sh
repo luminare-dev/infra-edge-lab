@@ -106,10 +106,14 @@ step_compat() (
   bash scripts/install_tofu_tools.sh "$work/bin" terraform >/dev/null
   "$work/bin/terraform" version
   # A copy without lock files and provider downloads: Terraform resolves the providers from its
-  # own registry and must never rewrite the committed OpenTofu lock files. The copy holds
-  # images/ as well, because docker_host reads its Dockerfile.
+  # own registry and must never rewrite the committed OpenTofu lock files. Local state, plan and
+  # override files of an environment stay out as well (an encrypted state is unreadable for
+  # Terraform, and the check is about the committed code). The copy holds images/ as well,
+  # because docker_host reads its Dockerfile.
   mkdir -p "$work/src"
-  tar -c --exclude=.terraform --exclude=.terraform.lock.hcl tofu images | tar -x -C "$work/src"
+  tar -c --exclude=.terraform --exclude=.terraform.lock.hcl \
+    --exclude='*.tfstate' --exclude='*.tfstate.*' --exclude=tfplan --exclude='*.tfplan' \
+    --exclude=override.tf --exclude='*_override.tf' tofu images | tar -x -C "$work/src"
   export TF_PLUGIN_CACHE_DIR="$work/plugins" TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE=true
   mkdir -p "$TF_PLUGIN_CACHE_DIR"
   for dir in $(code_dirs); do

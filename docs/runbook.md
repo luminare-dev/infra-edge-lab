@@ -1,7 +1,8 @@
 # Runbook
 
 At this version the repository runs no service; the failures below are those of the repository's
-own checks and of the OpenTofu checks (CI job `tofu`, `task tofu`).
+own checks, of the OpenTofu checks (CI job `tofu`, `task tofu`) and of the environments' state
+([ADR 0013](adr/0013-encrypted-state-in-r2-with-a-lock-file.md)).
 
 ## Failure: the secret scan finds a secret
 
@@ -72,3 +73,54 @@ own checks and of the OpenTofu checks (CI job `tofu`, `task tofu`).
 | **Diagnosis** | `docker ps -a --filter name=lab-it-`, `docker network ls --filter name=lab-it-`, `docker image ls 'lab-it-*'`. |
 | **Mitigation** | Remove exactly those objects: `docker rm -f` with the listed containers, then `docker network rm` and `docker image rm` with the listed names. |
 | **Fix** | Run the test again; it ends with a destroy of everything it created. |
+
+## Failure: the state of an environment cannot be decrypted
+
+| | |
+|---|---|
+| **Meaning** | `tofu plan` or `tofu apply` stops with `decryption failed for all provided methods` (with a local state file the message starts with `Error acquiring the state lock` and `failed to write backup file`). |
+| **Impact** | Nothing can be planned or changed in that environment until the right passphrase is back; the resources themselves keep running. |
+| **Diagnosis** | Check that `TF_VAR_state_passphrase` comes from the right SOPS file (`sops exec-env secrets/<env>.enc.env 'printenv TF_VAR_state_passphrase \| wc -c'` prints its length, not the value) and that `SECRETS` does not point at another environment's file. For `local`, a new random passphrase cannot read the state of an earlier run. |
+| **Mitigation** | Use the passphrase from the offline copy. Never delete the state or turn off `enforced`. |
+| **Fix** | With the passphrase lost for good, the state is gone: remove the resources by hand (`local`: the containers named `<name_prefix>local-*`, their network and image) or import them into a new state, then store the new passphrase in the SOPS file and offline. |
+
+## Procedure: change the state passphrase
+
+The state records which key provider encrypted it, so the passphrase changes in two runs with a
+temporary second key provider, `next`, given in the `TF_ENCRYPTION` environment variable (which
+OpenTofu merges with `encryption.tofu`); nothing is committed. Tested on 2026-10-21 with OpenTofu
+1.13.1 on a local state file.
+
+1. With the old passphrase in `TF_VAR_state_passphrase`, set `TF_ENCRYPTION` to a
+   `key_provider "pbkdf2" "next"` with the new passphrase, a `method "aes_gcm" "next"` with
+   `keys = key_provider.pbkdf2.next`, and
+   `state { method = method.aes_gcm.next, enforced = true, fallback { method = method.aes_gcm.main } }`
+   (each attribute on its own line). Run `tofu apply -refresh-only`: it reads the state with the
+   old key and writes it with the new one.
+2. Put the new passphrase into `TF_VAR_state_passphrase`, keep the `next` key provider and
+   method in `TF_ENCRYPTION`, and swap the state block to
+   `state { method = method.aes_gcm.main, enforced = true, fallback { method = method.aes_gcm.next } }`.
+   Run `tofu apply -refresh-only` again: the state is now encrypted by `main` with the new
+   passphrase.
+3. Unset `TF_ENCRYPTION`, run `tofu plan` (it reports no changes), and replace the passphrase in
+   the SOPS file and the offline copy.
+
+## Failure: the state is locked
+
+| | |
+|---|---|
+| **Meaning** | `tofu plan` or `tofu apply` stops with `Error acquiring the state lock`, naming a lock ID and, for the R2 backend, the lock object `<env>/terraform.tfstate.tflock`. |
+| **Impact** | The run changes nothing. Another run holds the lock, or a run was killed while holding it. |
+| **Diagnosis** | The message names who took the lock and when. Check for another terminal, a CI job or an `apply` waiting at its approval prompt. |
+| **Mitigation** | Wait for the other run to end. |
+| **Fix** | Only when no run is active: `tofu -chdir=tofu/envs/<env> force-unlock <lock ID>`. Whether R2 enforces the lock is not tested yet (see the README's limitations); until it is, only one operator applies at a time. |
+
+## Failure: an environment plans against the wrong state
+
+| | |
+|---|---|
+| **Meaning** | `task plan ENV=<env>` prints `note: <env> plans against its local state file`, or proposes to create resources that exist. |
+| **Impact** | A plan against an empty local state would create a second copy of every resource if applied. |
+| **Diagnosis** | `ls tofu/envs/<env>/backend_override.tf`: the file is there after `task init ENV=<env> BACKEND=local`. |
+| **Mitigation** | Do not apply that plan. |
+| **Fix** | `task init ENV=<env>` (without `BACKEND=local`) removes the override file and switches back to the remote state. |

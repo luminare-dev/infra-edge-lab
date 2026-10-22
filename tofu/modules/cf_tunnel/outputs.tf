@@ -24,3 +24,15 @@ output "address_hostnames" {
   description = "Fully qualified hostnames of the DNS-only A and AAAA records (showcase only), sorted."
   value       = sort([for r in cloudflare_dns_record.address : r.name])
 }
+
+output "records" {
+  description = "Every DNS record of the module, keyed by fully qualified hostname: type, proxied and comment. The environments' guard tests read it to check names and record types."
+  value = {
+    for r in concat(values(cloudflare_dns_record.tunnel), values(cloudflare_dns_record.address)) :
+    r.name => {
+      type    = r.type
+      proxied = r.proxied
+      comment = r.comment
+    }
+  }
+}

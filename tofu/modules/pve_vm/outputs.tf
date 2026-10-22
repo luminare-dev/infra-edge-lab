@@ -17,3 +17,8 @@ output "ipv4" {
   description = "Static IPv4 address of the virtual machine, without the prefix length."
   value       = split("/", var.ipv4_cidr)[0]
 }
+
+output "protection" {
+  description = "Whether the Proxmox VE protection flag is set on the virtual machine."
+  value       = proxmox_virtual_environment_vm.this.protection
+}

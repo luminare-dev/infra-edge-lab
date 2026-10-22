@@ -39,8 +39,8 @@ updates:
       dev-tools:
         patterns: ["*"]
 
-  # Every module and environment has its own lock file. Until the first environment exists,
-  # the /tofu/envs/* glob matches no directory with a .tf file.
+  # Every module and environment has its own lock file; an environment locks the same provider
+  # builds as the modules it calls, so one grouped pull request updates them together.
   - package-ecosystem: opentofu
     directories:
       - /tofu/modules/*

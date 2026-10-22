@@ -51,6 +51,11 @@ run "unprotected_by_default" {
     condition     = proxmox_virtual_environment_vm.this.protection == false
     error_message = "protect should default to false."
   }
+
+  assert {
+    condition     = output.protection == false
+    error_message = "The protection output should report the flag."
+  }
 }
 
 run "protection_follows_protect" {
@@ -65,6 +70,11 @@ run "protection_follows_protect" {
   assert {
     condition     = proxmox_virtual_environment_vm.this.protection == true
     error_message = "protect = true should set the Proxmox VE protection flag."
+  }
+
+  assert {
+    condition     = output.protection == true
+    error_message = "The protection output should report the flag."
   }
 }
 

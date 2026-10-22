@@ -32,6 +32,10 @@ override.tf
 override.tofu
 *_override.tf
 *_override.tofu
+# Variable files of an environment hold its real account IDs, addresses and e-mail addresses;
+# the values come from the SOPS files (TF_VAR_*) or from such a local file, never from git.
+*.tfvars
+*.tfvars.json
 
 # Ansible inventories are generated from the OpenTofu outputs
 ansible/inventories/*/hosts.yml

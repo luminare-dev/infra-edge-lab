@@ -121,6 +121,15 @@ run "allows_showcase_names_and_play" {
     condition     = cloudflare_dns_record.address["play"].comment == "managed-by-tofu env=showcase"
     error_message = "DNS-only records should carry the comment tag as well."
   }
+
+  assert {
+    condition = output.records == {
+      "show-web.example.com" = { type = "CNAME", proxied = true, comment = "managed-by-tofu env=showcase" }
+      "show-ssh.example.com" = { type = "CNAME", proxied = true, comment = "managed-by-tofu env=showcase" }
+      "play.example.com"     = { type = "A", proxied = false, comment = "managed-by-tofu env=showcase" }
+    }
+    error_message = "The records output should list every record with its type, proxy flag and comment."
+  }
 }
 
 # --- names that are rejected --------------------------------------------------------------------

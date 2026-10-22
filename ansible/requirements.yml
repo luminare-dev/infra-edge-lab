@@ -34,3 +34,8 @@ collections:
     version: 6.0.2
   - name: devsec.hardening
     version: 11.0.0
+  # Prometheus on the monitoring hosts (playbooks/site.yml), which the gameserver_observability
+  # role of luminare.gameserver adds its jobs and rules to. Not in the "ansible" package: from
+  # Ansible Galaxy at this exact version, which ansible-galaxy checks against Galaxy's sha256.
+  - name: prometheus.prometheus
+    version: 0.30.2

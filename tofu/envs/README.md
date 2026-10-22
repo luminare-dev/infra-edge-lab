@@ -6,7 +6,7 @@ the modules in [../modules](../modules)
 
 | Environment | Hosts | Modules | DNS names | Protection | State |
 |---|---|---|---|---|---|
-| `local` | systemd containers on the local Docker daemon | `docker_host` | none (no Cloudflare) | none | local file |
+| `local` | systemd containers on the local Docker daemon: `edge-01`, `db-01`, `fx-01` | `docker_host` | none (no Cloudflare) | none | local file, removed by `task destroy` |
 | `lab` | Proxmox VE virtual machines | `pve_vm`, `cf_tunnel`, `cf_access_app` | `lab-*` | every host in the group `db` | R2 |
 | `demo` | one cloud server (`substrate = "hcloud"`) or one container (`substrate = "docker"`) | `hcloud_vm` or `docker_host`, `cf_tunnel`, `cf_access_app` | `demo-*` | never | R2 |
 | `showcase` | one cloud server with a primary IPv4 address (skeleton) | `hcloud_vm`, `cf_tunnel`, `cf_access_app` | `show-*`, `play` | always | R2 |
@@ -65,10 +65,13 @@ task test ENV=lab                                             # mocked guard tes
   `AWS_SECRET_ACCESS_KEY` ([ADR 0013](../../docs/adr/0013-encrypted-state-in-r2-with-a-lock-file.md)).
   Without `AWS_ENDPOINT_URL_S3` the S3 backend sends its requests to AWS, so `task init` and
   `task plan` refuse to use the remote backend without it.
-- Apply and destroy are plain OpenTofu commands at this version, with the same passphrase as the
-  init: `tofu -chdir=tofu/envs/local apply`, then `tofu -chdir=tofu/envs/local destroy`. The
-  `local` environment needs a Docker daemon that allows privileged containers; it creates the
-  containers `lab-local-edge-01` and `lab-local-db-01` and the network `lab-local`.
+- `task up ENV=<env>` runs init, apply, inventory, configure and smoke, `task destroy ENV=<env>`
+  destroys, and `task rebuild ENV=<env>` does both in a row, each with the same passphrase as the
+  init ([runbook](../../docs/runbook.md#procedure-rebuild-an-environment-from-nothing)).
+  `task destroy` and `task rebuild` refuse `showcase`. The `local`
+  environment needs a Docker daemon that allows privileged containers; it creates the containers
+  `lab-local-edge-01`, `lab-local-db-01` and `lab-local-fx-01` and the network `lab-local`, and
+  `task e2e:local` builds, checks and destroys it in one go.
 - Every plan of `lab`, `demo` and `showcase` shows the Cloudflare provider's warning "Resource
   Destruction Considerations" for the tunnel configuration: the provider has no delete call for
   it. The configuration is stored under its tunnel, and a destroy deletes the tunnel.
@@ -84,7 +87,7 @@ Every environment needs `state_passphrase` (`TF_VAR_state_passphrase`, at least 
 | `allowed_emails` | | required | `[]` (needed with `fxserver`) | required | Who may log in to the applications for people. |
 | `allowed_idps` | | `[]` | `[]` | `[]` | Identity providers offered at login; empty means all. |
 | `tunnel_name` | | `lab-edge` | `demo-edge` | `show-edge` | Name of the tunnel. |
-| `hosts` | `edge-01`, `db-01` | `edge-01`, `db-01` (protected), `fx-01` | `edge-01` (`edge`, `db`) | `edge-01` (`edge`, `db`, `fxserver`) | Hosts and their inventory groups; `lab` also sets `vm_id` (110 to 119), `ipv4_cidr`, sizes and `protect`. |
+| `hosts` | `edge-01`, `db-01`, `fx-01` | `edge-01`, `db-01` (protected), `fx-01` | `edge-01` (`edge`, `db`) | `edge-01` (`edge`, `db`, `fxserver`) | Hosts and their inventory groups; `lab` also sets `vm_id` (110 to 119), `ipv4_cidr`, sizes and `protect`. |
 | `ssh_keys` / `ssh_public_key` | | `ssh_keys` required | `ssh_public_key`, required with `hcloud` | `ssh_public_key` required | Public key(s) of the admin user. |
 | `node_name`, `gateway`, `pve_ip` | | `pve`, `192.0.2.1`, `192.0.2.2` | | | Proxmox VE node, default gateway and API address (documentation addresses by default). |
 | `substrate` | | | `hcloud` | | `hcloud` or `docker`. |

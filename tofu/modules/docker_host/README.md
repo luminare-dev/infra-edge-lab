@@ -11,6 +11,10 @@ a cloud account ([ADR 0010](../../../docs/adr/0010-systemd-containers-as-a-local
 - Each container is privileged, shares the host's cgroup namespace with `/sys/fs/cgroup`
   writable, has tmpfs on `/run` and `/run/lock` and runs `/lib/systemd/systemd`. The apply waits
   until the image's health check reports that systemd has booted.
+- Hosts in the groups `monitoring` and `docker_hosts` run Docker Engine themselves (the `docker`
+  role), and Docker's overlay storage cannot stack on the container's own overlay root, so they
+  also get tmpfs (with `exec`, `docker_storage_size` each) on `/var/lib/docker` and
+  `/var/lib/containerd`, as the Molecule scenarios do.
 - No port is published. Ansible connects through the Docker API (`community.docker.docker`).
 - Container, network and image names start with `name_prefix` (default `lab-`), so they never
   collide with other containers on the same daemon: `lab-local-edge-01`, network `lab-local`.
@@ -63,6 +67,7 @@ allow privileged containers.
 | `subnet` | string | `null` | IPv4 subnet of the network; null lets Docker pick one. |
 | `keep_image` | bool | `false` | Keep the image after destroy. |
 | `wait_timeout` | number | `120` | Seconds to wait for systemd to boot. |
+| `docker_storage_size` | string | `"2g"` | Size limit of each Docker storage tmpfs of the hosts in `monitoring` and `docker_hosts`. |
 
 ## Outputs
 
@@ -75,7 +80,8 @@ allow privileged containers.
 ## Tests
 
 - `tests/docker_host.tftest.hcl` runs against a mocked provider: the container settings that
-  systemd needs, no published port, names, labels, the image build and the shape of `hosts`.
+  systemd needs, the Docker storage tmpfs of the hosts that run Docker, no published port, names,
+  labels, the image build and the shape of `hosts`.
 - `integration/systemd_hosts.tftest.hcl` runs against the real Docker daemon: it builds the
   image for both platforms, boots two hosts per platform and destroys everything again (names
   start with `lab-it-`). Run it with `scripts/check_tofu.sh integration`.

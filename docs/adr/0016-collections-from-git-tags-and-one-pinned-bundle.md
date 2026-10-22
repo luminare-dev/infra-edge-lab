@@ -1,6 +1,6 @@
 # 0016. Collections from git tags, and one pinned bundle for the tests
 
-- **Status:** accepted
+- **Status:** accepted; the point "CI never installs `requirements.yml`" is superseded by [0022](0022-an-end-to-end-run-of-the-local-environment-on-every-pull-request.md)
 - **Date:** 2026-10-21
 
 ## Context

@@ -109,8 +109,60 @@ tag (`type: git`). The clone fails when the tag does not exist yet, when the rep
 readable from this machine, or without `git`.
 
 **Fix:** check that `git ls-remote https://github.com/luminare-dev/ansible-collection-infra_edge.git v0.2.0`
-prints the tag. The tests of this repository never install these collections, so they are not
-affected.
+prints the tag. The unit tests and ansible-lint never install these collections, so they are not
+affected; `task collections`, `task e2e:local` and the CI workflow `e2e-local` are. To run the
+playbooks with collections built from local checkouts instead, install those into a folder of
+your own and point `ANSIBLE_COLLECTIONS_PATH` at it; `task e2e:local` then skips the install:
+
+```bash
+ansible-galaxy collection build ../ansible-collection-infra_edge --output-path /tmp/collections-dist
+ansible-galaxy collection build ../ansible-collection-gameserver --output-path /tmp/collections-dist
+ansible-galaxy collection install /tmp/collections-dist/*.tar.gz -p /tmp/collections
+ansible-galaxy collection install devsec.hardening:11.0.0 prometheus.prometheus:0.30.2 -p /tmp/collections
+ANSIBLE_COLLECTIONS_PATH=/tmp/collections task e2e:local
+```
+
+## ansible-lint: `The role 'luminare.infra_edge.<role>' was not found`
+
+**Cause:** the playbooks name roles of the luminare collections, which ansible-lint mocks
+(`mock_roles` in `.ansible-lint`) because it runs offline. An older copy of such a collection in
+the collection path (for example `~/.ansible/collections/ansible_collections/luminare/`) takes
+precedence over the mock, and a role it lacks is then missing.
+
+**Fix:** remove that copy if nothing else needs it, or run ansible-lint with a collection path
+without it (CI has none). A role added to `site.yml` needs a `mock_roles` entry;
+`tests/test_playbooks.py` checks the list.
+
+## `task e2e:local`: `tofu/envs/local/terraform.tfstate is left from an earlier run`
+
+**Cause:** an earlier run (or `task up ENV=local`) was not destroyed. Its state is encrypted with
+that run's passphrase, which the new run does not know, and its containers may still exist.
+
+**Fix:** destroy it with its passphrase (`TF_VAR_state_passphrase=<passphrase> task destroy
+ENV=local`). If the passphrase is lost and `docker ps -a --filter name=lab-local-` lists nothing,
+delete `tofu/envs/local/terraform.tfstate` and `terraform.tfstate.backup`; otherwise remove the
+containers, the network `lab-local` and the image `lab-systemd-host-*` first.
+
+## `task e2e:local`: `the second run changed something`
+
+**Cause:** a task reports a change on every run, so the playbook is not idempotent; the lines
+starting with `changed:` before the message name the tasks.
+
+**Fix:** make the task idempotent in its role (in this repository or in the collection it comes
+from), never by adding `changed_when: false` to a task that really changes something. A
+service that a role starts again on the second run was stopped by something in the first run:
+read its journal (`docker exec lab-local-<host> journalctl -u <service>`).
+
+## `Temporary failure resolving '<host>'` in the local environment after the base role
+
+**Cause:** the base role's firewall starts with `flush ruleset`, which also removes the NAT rules
+through which a container reaches Docker's DNS server, and the drop-in
+`/etc/nftables.d/05-local-container-dns.nft` that puts them back is missing (the playbook ran
+without `playbooks/local_prepare.yml`).
+
+**Fix:** run `task configure ENV=local`, which runs `local_prepare.yml` first, or run that
+playbook and then `systemctl restart nftables` in the container
+([ADR 0022](adr/0022-an-end-to-end-run-of-the-local-environment-on-every-pull-request.md)).
 
 ## Molecule: a scenario stops for about two minutes when it starts Docker or node_exporter
 

@@ -1,0 +1,43 @@
+# Restore test of the backups of every host (docs/runbook.md, "Procedure: test a restore"). On each
+# host, /usr/local/sbin/restic-restore-test of the luminare.infra_edge.restic_backup role restores
+# the newest snapshot into a temporary folder, compares every file, folder and link with the
+# snapshot, prints how long the restore took (the time to restore the host) and removes the
+# folder. It fails when the newest snapshot is older than restic_backup_max_age_hours (26 hours by
+# default), which means that the nightly backup did not run. Run it from the ansible/ folder:
+#
+#   ansible-playbook -i inventories/<env> playbooks/restore_test.yml [-e restore_test_backup_now=true]
+#
+# "task restore-test ENV=<env>" runs it; with BACKUP_NOW=1 (and in task e2e:local) the hosts first
+# take the database dumps and a backup, as the nightly timers do. It changes no configuration.
+
+- name: Restore test of the backups
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    restore_test_backup_now: false
+    restore_test_script: /usr/local/sbin/restic-restore-test
+  tasks:
+    - name: Take the database dumps now
+      ansible.builtin.systemd_service:
+        name: mariadb-dump.service
+        state: started
+      when:
+        - restore_test_backup_now | bool
+        - inventory_hostname in groups['db']
+
+    - name: Take a backup now
+      ansible.builtin.systemd_service:
+        name: restic-backup.service
+        state: started
+      when: restore_test_backup_now | bool
+
+    - name: Restore the newest snapshot and compare it with the snapshot
+      ansible.builtin.command:
+        cmd: "{{ restore_test_script }}"
+      register: restore_test_result
+      changed_when: false
+
+    - name: Show the result
+      ansible.builtin.debug:
+        msg: "{{ restore_test_result.stdout_lines }}"

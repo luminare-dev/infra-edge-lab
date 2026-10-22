@@ -2,9 +2,10 @@
 
 The failures below are those of the repository's own checks, of the OpenTofu checks (CI job
 `tofu`, `task tofu`) and of the environments' state
-([ADR 0013](adr/0013-encrypted-state-in-r2-with-a-lock-file.md)), followed by the services that
-the roles in `ansible/roles` set up on a host: Docker, node_exporter, Uptime Kuma and the deploy
-target. No playbook of this version applies the roles to an environment yet.
+([ADR 0013](adr/0013-encrypted-state-in-r2-with-a-lock-file.md)), then of building and checking
+an environment (`task up`, `task e2e:local`), followed by the services that the roles in
+`ansible/roles` set up on a host: Docker, node_exporter, Uptime Kuma and the deploy target. The
+services of the collections' roles have runbooks in their own repositories.
 
 ## Failure: the secret scan finds a secret
 
@@ -127,6 +128,33 @@ OpenTofu merges with `encryption.tofu`); nothing is committed. Tested on 2026-10
 | **Mitigation** | Do not apply that plan. |
 | **Fix** | `task init ENV=<env>` (without `BACKEND=local`) removes the override file and switches back to the remote state. |
 
+## Procedure: rebuild an environment from nothing
+
+1. For `lab` and `demo`, export the zone's DNS records first (the operational safety net of
+   [ADR 0009](adr/0009-guard-rails-for-a-shared-dns-zone.md)); no task does this at this version.
+2. Install the collections once: `task collections`.
+3. `task rebuild ENV=<env>`: destroy, then init, apply, inventory, configure and smoke; it prints
+   how long it took. `lab` and `demo` ask before the destroy and the apply unless
+   `AUTO_APPROVE=1`; `local` needs `TF_VAR_state_passphrase` (a new random one when nothing of
+   it exists). `showcase` is refused: it is taken down by hand only
+   ([ADR 0014](adr/0014-one-root-module-per-environment.md)).
+4. Read the smoke test at the end: every nginx site 200, MariaDB `SELECT 1`, `/info.json` with
+   the build, every Prometheus target up.
+
+`task e2e:local` does the same for `local` with a random passphrase, runs the playbook twice and
+plans again, and always destroys at the end
+([ADR 0022](adr/0022-an-end-to-end-run-of-the-local-environment-on-every-pull-request.md)).
+
+## Failure: the e2e run or the smoke test fails
+
+| | |
+|---|---|
+| **Meaning** | `task e2e:local` (or the CI job `e2e-local`) ends with `Result: failed at "<step>"`, or `task smoke` fails a check. |
+| **Impact** | The change is not proven to rebuild the environment; the e2e run has already destroyed its containers. |
+| **Diagnosis** | The step names the cause: `tofu apply` (Docker, the host image), `collections` (the git tags, see [troubleshooting](troubleshooting.md)), `configure` (the failed task and host in the log; set `E2E_LOG_DIR` to keep both playbook logs), `second run` (a task that is not idempotent), `tofu plan` (a resource that drifts after its apply), `smoke` (the check and host). To look inside, run the steps one by one: `task up ENV=local`, then `docker exec lab-local-<host> journalctl -u <service>`. |
+| **Mitigation** | `task destroy ENV=local` with the same `TF_VAR_state_passphrase` removes what a manual run left. |
+| **Fix** | Fix the role or the inventory value that the failed task names, then run `task e2e:local` again. |
+
 ## Failure: a Molecule scenario leaves containers behind
 
 | | |
@@ -143,7 +171,7 @@ OpenTofu merges with `encryption.tofu`); nothing is committed. Tested on 2026-10
 |---|---|
 | **Meaning** | On a Docker host, containers cannot reach the outside, or published ports stop answering, after `nftables.service` was restarted (its `flush ruleset` also removes Docker's rules). |
 | **Impact** | Services in containers (for example Uptime Kuma) cannot check anything; ports published on a private address are unreachable. |
-| **Diagnosis** | `nft list tables` shows no `ip nat` table of Docker; `systemctl show docker -p PartOf` does not list `nftables.service` (the role ran with `docker_restart_with_nftables: false`), or `/etc/nftables.d/60-docker.nft` is missing. |
+| **Diagnosis** | `nft list tables` shows no `ip nat` table of Docker; `systemctl show docker -p PartOf` does not list `nftables.service` (the role ran with `docker_restart_with_nftables: false`), or `/etc/nftables.d/60-docker.nft` is missing. `journalctl -u docker` with `Start request repeated too quickly` means more firewall restarts within a minute than `systemctl show docker -p StartLimitBurst` allows (the role's drop-in allows 10). |
 | **Mitigation** | `systemctl restart docker` (with live restore the containers keep running). |
 | **Fix** | Run the docker role with `docker_restart_with_nftables: true` (the default) and with the base role's `/etc/nftables.d` in place, so the drop-ins are written ([ADR 0019](adr/0019-docker-ports-on-loopback-and-a-firewall-that-restarts-docker.md)). |
 

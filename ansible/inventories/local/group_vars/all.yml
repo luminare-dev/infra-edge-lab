@@ -1,0 +1,50 @@
+# Values for every host of the local environment: systemd containers on the local Docker daemon,
+# reached by Ansible through "docker exec" (connection community.docker.docker, written into
+# hosts.yml by scripts/render_inventory.py with each host's address as host_ip). The playbook is
+# the same as for every other environment (playbooks/site.yml); this folder holds what is
+# special about this one: no tunnel, no SSH, throwaway secrets, a fake game server build and a
+# backup repository inside the host.
+#
+# No secret is written here. Every password is created on first use by the password lookup in a
+# file below .generated/ next to this folder (git-ignored, mode 0600) and read again from there by
+# every later run, so a second run changes nothing; "task destroy ENV=local" deletes the folder
+# together with the containers. playbooks/local_prepare.yml creates the rest of .generated/: a
+# throwaway SSH key pair and the fake server build.
+
+# The folder of the generated files on the control node.
+local_generated_dir: "{{ inventory_dir }}/.generated"
+
+# Letters and digits only: every role here accepts these characters in its secrets.
+local_password_chars:
+  - ascii_letters
+  - digits
+
+# /perf/ basic auth of the game server, shared by the txadmin role (which writes it into
+# secrets.cfg on the game servers) and the gameserver_observability role (Prometheus' password
+# file on the monitoring host).
+local_perf_password: >-
+  {{ lookup('ansible.builtin.password', local_generated_dir ~ '/perf_password',
+            length=32, chars=local_password_chars) }}
+
+# base (luminare.infra_edge): both users get the throwaway public key. Ansible never logs in over
+# SSH here, so the firewall admits SSH from the host itself only.
+base_admin_ssh_keys:
+  - "{{ lookup('ansible.builtin.file', local_generated_dir ~ '/ssh_key.pub') }}"
+base_automation_ssh_keys:
+  - "{{ lookup('ansible.builtin.file', local_generated_dir ~ '/ssh_key.pub') }}"
+base_ssh_allow_mode: loopback
+
+# monitoring: node_exporter on the host's address in the container network, reachable through the
+# firewall from the monitoring hosts (Prometheus) only.
+monitoring_node_exporter_listen_address: "{{ host_ip }}"
+monitoring_node_exporter_allowed_sources: "{{ groups['monitoring'] | map('extract', hostvars, 'host_ip') | list }}"
+
+# restic_backup (luminare.infra_edge): a repository in a folder of the host itself instead of a
+# bucket off the host, so nothing leaves the container. Backed up: the role's defaults (/etc and
+# /var/backups, with the database dumps on db-01 and the game server backups on fx-01). The time
+# of the last successful backup goes to node_exporter's textfile collector.
+restic_backup_repository: /srv/restic-repo
+restic_backup_password: >-
+  {{ lookup('ansible.builtin.password', local_generated_dir ~ '/restic_password',
+            length=40, chars=local_password_chars) }}
+restic_backup_textfile_dir: /var/lib/node_exporter/textfile

@@ -41,8 +41,14 @@ run "default_hosts" {
         groups       = tolist(["edge", "monitoring"])
         ip           = "192.0.2.10"
       }
+      "fx-01" = {
+        ansible_host = "lab-local-fx-01"
+        connection   = "community.docker.docker"
+        groups       = tolist(["fxserver"])
+        ip           = "192.0.2.10"
+      }
     }
-    error_message = "The local environment should create edge-01 and db-01 as containers named lab-local-<host>."
+    error_message = "The local environment should create edge-01, db-01 and fx-01 (the hosts and groups of the lab) as containers named lab-local-<host>."
   }
 
   assert {

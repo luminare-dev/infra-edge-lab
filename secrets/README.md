@@ -18,7 +18,8 @@ never reach CI: the lab is applied from the operator's workstation only.
 The recipients are set by the creation rules in `.sops.yaml` at the repository root, a committed
 file that holds public age keys only; private keys never enter the repository. At this version
 the repository ships **no** encrypted file and no `.sops.yaml` yet; [env.example](env.example)
-lists the keys a file can hold. Values are read into the environment of one command
+lists the keys a file can hold, and [configuration.md](../docs/configuration.md#secrets) shows how
+to create the age keys and an example `.sops.yaml` for every file of this table. Values are read into the environment of one command
 (`sops exec-env secrets/<env>.enc.env '<command>'`) and never written to disk in clear text;
 `task init ENV=<env>` and `task plan ENV=<env>` do this themselves when the file exists
 ([tofu/envs/README.md](../tofu/envs/README.md)).

@@ -11,6 +11,25 @@ a value in the code. An environment reads its inputs from `TF_VAR_*` environment
 its SOPS file) or from a `*.auto.tfvars` file next to it, which git ignores; examples use
 `example.com` and the documentation ranges.
 
+## Variables per environment
+
+What each environment needs before `task init`, `task plan` or `task up` can run there. The
+defaults, the optional inputs and the outputs are in
+[tofu/envs/README.md](../tofu/envs/README.md#inputs).
+
+| Environment | OpenTofu inputs to set (`TF_VAR_<name>`) | Provider and backend credentials | Ansible values | Kept in |
+|---|---|---|---|---|
+| `local` | `state_passphrase` (`task e2e:local` makes a random one per run) | none | `ansible/inventories/local/group_vars/` (committed; the passwords are generated into `.generated/`) | nothing to keep |
+| `lab` | `state_passphrase`, `zone`, `account_id`, `zone_id`, `access_team_name`, `allowed_emails`, `ssh_keys`; a real lab also overrides `hosts`, `node_name`, `gateway` and `pve_ip`, whose defaults are documentation values | `PROXMOX_VE_ENDPOINT`, `PROXMOX_VE_API_TOKEN` ([ADR 0025](adr/0025-proxmox-ve-api-tokens-with-least-privilege.md)), `PROXMOX_VE_API_HEADERS` (CI only, the service token of `lab-pveapi`), `CLOUDFLARE_API_TOKEN`, `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | none at this version: write `group_vars/`, with the secrets in `*.sops.yaml` files, before `task configure` | `secrets/lab.enc.env`; read-only tokens in `secrets/lab-ci.enc.env` |
+| `demo` | `state_passphrase`, `zone`, `account_id`, `zone_id`, `access_team_name`; `ssh_public_key` with `substrate = "hcloud"` (the default); `allowed_emails` once a host is in `fxserver` | `CLOUDFLARE_API_TOKEN`, `HCLOUD_TOKEN` (with `hcloud`), `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | `ansible/inventories/demo/group_vars/` (committed; the backup password is generated into `.generated/`) | `secrets/demo.enc.env`; read-only tokens in `secrets/demo-ci.enc.env`; the tunnel test in `secrets/demo-e2e.enc.env` |
+| `showcase` | `state_passphrase`, `zone`, `account_id`, `zone_id`, `access_team_name`, `allowed_emails`, `ssh_public_key`; `status_origin` for `show-status` | `CLOUDFLARE_API_TOKEN`, `HCLOUD_TOKEN`, `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | none at this version, as for `lab` | `secrets/showcase.enc.env`; read-only tokens in `secrets/showcase-ci.enc.env` |
+
+`allowed_emails` is a JSON list (`["operator@example.com"]`), `ssh_keys` a JSON list of public key
+lines and `ssh_public_key` one public key line. The zone is always an input, never a value in the
+code.
+
+## Tasks, checks and tests
+
 The options below change how the tasks, checks and tests run.
 
 | Option | Type | Default | Description |
@@ -163,17 +182,29 @@ An upload-only SSH account and a path unit that runs a deploy script
 
 ## Secrets
 
-Secrets never go into this repository, an issue or a log. CI scans every commit with gitleaks; a
-leaked secret is rotated first and removed from history second.
+Secrets never go into this repository in clear text, nor into an issue or a log. CI scans every
+commit with gitleaks; a leaked secret is rotated first and removed from history second.
 
-Credentials for an environment are kept in SOPS-encrypted dotenv files in `secrets/`
-([ADR 0006](adr/0006-sops-and-age-for-secrets.md), [secrets/README.md](../secrets/README.md)).
-At this version the repository ships none of them and no `.sops.yaml` yet. The keys a file can
-hold:
+Credentials and other secret values are kept in files encrypted with SOPS for age keys
+([ADR 0006](adr/0006-sops-and-age-for-secrets.md)). **This repository ships no encrypted file,
+no `.sops.yaml` and no age recipient**: each operator creates their own keys and files as
+described below, and a fork never inherits anyone's recipients.
+
+### Layout
+
+| File | Holds | Decrypted by |
+|---|---|---|
+| `secrets/<env>.enc.env` (`lab`, `demo`, `showcase`) | the write credentials of the environment and its state passphrase (dotenv, one `KEY=value` per line) | the operator, the break-glass key; for `demo` and `showcase` also the GitHub environment of the same name (`apply`) |
+| `secrets/<env>-ci.enc.env` | read-only tokens for plans, the state passphrase, a read-only key for the state bucket | the operator, the break-glass key and the GitHub environment `lab-plan` (`plan`, `drift`) |
+| `secrets/demo-e2e.enc.env` | the Cloudflare token, account, zone and team values of the tunnel test; no cloud server token | the operator, the break-glass key and the GitHub environment `demo-e2e` |
+| `ansible/inventories/<env>/group_vars/*.sops.yaml` | secret Ansible values of the environment (database, backup and admin passwords, the admin password hash) | the operator, the break-glass key; for `demo` and `showcase` also their GitHub environment |
+| `.sops.yaml` at the repository root | the creation rules: which public keys may decrypt which file | public, committed; holds public keys only |
+
+The keys a dotenv file can hold:
 
 | Key | Read by | Notes |
 |---|---|---|
-| `PROXMOX_VE_ENDPOINT`, `PROXMOX_VE_API_TOKEN`, `PROXMOX_VE_API_HEADERS` | bpg/proxmox provider | API token with privilege separation; extra headers for an access proxy in front of the API |
+| `PROXMOX_VE_ENDPOINT`, `PROXMOX_VE_API_TOKEN`, `PROXMOX_VE_API_HEADERS` | bpg/proxmox provider | API token with privilege separation ([ADR 0025](adr/0025-proxmox-ve-api-tokens-with-least-privilege.md)); extra headers for an access proxy in front of the API |
 | `CLOUDFLARE_API_TOKEN`, `TF_VAR_account_id`, `TF_VAR_zone_id` | cloudflare/cloudflare provider; `task configure` (the tunnel token) | token limited to one zone; reading the tunnel token needs tunnel write permission |
 | `TF_VAR_zone`, `TF_VAR_access_team_name`, `TF_VAR_allowed_emails` | `lab`, `demo`, `showcase` | the zone, the Zero Trust team name and who may log in (JSON list) |
 | `TF_VAR_ssh_keys`, `TF_VAR_ssh_public_key` | `lab` (JSON list), `demo` and `showcase` (one key line) | public keys of the admin user |
@@ -182,14 +213,101 @@ hold:
 | `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | S3-compatible state backend | the account's endpoint (`https://<account_id>.r2.cloudflarestorage.com`) and a token for the state bucket only |
 | `TF_VAR_state_passphrase` | state and plan encryption | at least 16 characters; kept offline as well, since a lost passphrase means a lost state |
 
-Secret Ansible variables go into `ansible/inventories/<env>/group_vars/*.sops.yaml`, encrypted
-with SOPS as well: `ansible/ansible.cfg` enables the SOPS vars plugin of `community.sops`, which
-decrypts them at run time without writing a decrypted copy. The roles of this repository need no
-secret: `deploy_target` takes public keys only. The `local` environment generates its own
-throwaway secrets (see [Playbooks and inventories](#playbooks-and-inventories)).
+[secrets/env.example](../secrets/env.example) lists the same keys without values. The roles of
+this repository need no secret (`deploy_target` takes public keys only), and the `local`
+environment generates its own throwaway secrets (see
+[Playbooks and inventories](#playbooks-and-inventories)).
 
-To create a file: generate an age key (`age-keygen -o ~/.config/sops/age/keys.txt`), add its
-public key to the creation rules in `.sops.yaml` at the repository root (a committed file that
-holds public keys only), then run `sops edit secrets/<env>.enc.env`.
-Use the file only through `sops exec-env secrets/<env>.enc.env '<command>'`; `task init` and
-`task plan` do this themselves when the file exists.
+### Create the age keys
+
+Each key is a pair: the private key (a line starting with `AGE-SECRET-KEY-1`) decrypts, the
+public key (`age1…`) goes into `.sops.yaml`. `age-keygen -y <file>` prints the public key of a
+private key file.
+
+1. **Operator** (on the workstation, where SOPS looks for it by default):
+
+   ```bash
+   mkdir -p ~/.config/sops/age
+   age-keygen -o ~/.config/sops/age/keys.txt
+   chmod 600 ~/.config/sops/age/keys.txt
+   ```
+
+2. **Break-glass** (the copy that survives a lost workstation): create it the same way into a
+   temporary file, note its public key, keep the private key offline only (printed, and in a
+   password manager), then delete the file.
+3. **One key per GitHub environment** that decrypts files (`lab-plan`, `demo`, `showcase`,
+   `demo-e2e`): create it into a temporary file, put the whole private key line into that
+   environment's secret `SOPS_AGE_KEY` (Settings, Environments), note the public key, then delete
+   the file. Such a key never exists anywhere else
+   ([runbook](runbook.md#procedure-turn-on-the-cloud-workflows)).
+
+### Write `.sops.yaml`
+
+This example gives every file of the layout above its recipients. Replace each `<…>` with the
+public key of that name, keep the order of the rules (SOPS uses the first rule whose `path_regex`
+matches), and commit the file:
+
+```yaml
+# Who can decrypt which file. Public age keys only; SOPS takes the first rule whose path_regex
+# matches the path of the file, so the most specific rule comes first.
+creation_rules:
+  # Read-only credentials for plans in CI: the GitHub environment lab-plan (plan, drift).
+  - path_regex: secrets/(lab|demo|showcase)-ci\.enc\.env$
+    age: >-
+      <operator>,
+      <break-glass>,
+      <lab-plan>
+  # Write credentials of the lab: the workstation only, never CI.
+  - path_regex: secrets/lab\.enc\.env$
+    age: >-
+      <operator>,
+      <break-glass>
+  # Write credentials of demo and showcase, and their secret inventory values: the GitHub
+  # environment of the same name (apply, after the owner's review).
+  - path_regex: (secrets/demo\.enc\.env|ansible/inventories/demo/group_vars/.*\.sops\.yaml)$
+    age: >-
+      <operator>,
+      <break-glass>,
+      <demo>
+  - path_regex: (secrets/showcase\.enc\.env|ansible/inventories/showcase/group_vars/.*\.sops\.yaml)$
+    age: >-
+      <operator>,
+      <break-glass>,
+      <showcase>
+  # The tunnel test: the GitHub environment demo-e2e.
+  - path_regex: secrets/demo-e2e\.enc\.env$
+    age: >-
+      <operator>,
+      <break-glass>,
+      <demo-e2e>
+  # Secret inventory values of the lab.
+  - path_regex: ansible/inventories/lab/group_vars/.*\.sops\.yaml$
+    age: >-
+      <operator>,
+      <break-glass>
+```
+
+The rules were tested on 2026-10-22 with SOPS 3.13.3 and age 1.3.2, with throwaway keys: each
+file of the layout was decrypted by exactly the keys in the table above.
+
+### Create and use a file
+
+```bash
+sops edit secrets/lab.enc.env                    # creates the file, or edits it
+sops exec-env secrets/lab.enc.env 'tofu -chdir=tofu/envs/lab plan'
+sops updatekeys secrets/lab.enc.env              # after a change of .sops.yaml
+```
+
+`sops edit` opens the decrypted content in the editor and writes it back encrypted; keep each
+value on one line. Use a file only through `sops exec-env`, so the values exist in the
+environment of that one command; `task init`, `task plan` and the other environment tasks do
+this themselves when the file exists. Never write a decrypted copy to disk: `.gitignore` ignores
+every other file in `secrets/` and every `*.dec.*` file, and a unit test fails if a committed
+`*.enc.env` file holds a value that is not encrypted. Secret Ansible values go into
+`ansible/inventories/<env>/group_vars/*.sops.yaml` (`sops edit` as above): the SOPS vars plugin
+of `community.sops`, enabled in `ansible/ansible.cfg`, decrypts them at run time without writing
+a decrypted copy.
+
+To remove a recipient (a lost key, a GitHub environment that is gone), delete its public key from
+`.sops.yaml`, run `sops updatekeys` on every file it could read, and rotate the credentials in
+those files: the removed key may hold an old copy.

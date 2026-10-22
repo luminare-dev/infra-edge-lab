@@ -104,23 +104,15 @@ tools and puts them first on the `PATH`. Remove an outdated copy with
 
 ## `ansible-galaxy collection install -r requirements.yml` fails to clone a luminare collection
 
-**Cause:** the luminare collections are installed from their GitHub repositories at a release
-tag (`type: git`). The clone fails when the tag does not exist yet, when the repository is not
-readable from this machine, or without `git`.
+**Cause:** the luminare collections are cloned from their public GitHub repositories at the
+release tags pinned in `ansible/requirements.yml` (`type: git`). The clone fails without `git`,
+without access to `github.com`, or when the pinned tag is mistyped.
 
-**Fix:** check that `git ls-remote https://github.com/luminare-dev/ansible-collection-infra_edge.git v0.2.0`
-prints the tag. The unit tests and ansible-lint never install these collections, so they are not
-affected; `task collections`, `task e2e:local` and the CI workflow `e2e-local` are. To run the
-playbooks with collections built from local checkouts instead, install those into a folder of
-your own and point `ANSIBLE_COLLECTIONS_PATH` at it; `task e2e:local` then skips the install:
-
-```bash
-ansible-galaxy collection build ../ansible-collection-infra_edge --output-path /tmp/collections-dist
-ansible-galaxy collection build ../ansible-collection-gameserver --output-path /tmp/collections-dist
-ansible-galaxy collection install /tmp/collections-dist/*.tar.gz -p /tmp/collections
-ansible-galaxy collection install devsec.hardening:11.0.0 prometheus.prometheus:0.30.2 -p /tmp/collections
-ANSIBLE_COLLECTIONS_PATH=/tmp/collections task e2e:local
-```
+**Fix:** check that the tag in `ansible/requirements.yml` is one of the tags that
+`git ls-remote --tags https://github.com/luminare-dev/ansible-collection-infra_edge.git` (or
+`ansible-collection-gameserver.git`) lists, and that `git` and the network work. The unit tests
+and ansible-lint never install these collections, so they are not affected; `task collections`,
+`task e2e:local` and the CI workflow `e2e-local` are.
 
 ## ansible-lint: `The role 'luminare.infra_edge.<role>' was not found`
 
@@ -182,6 +174,28 @@ edit permissions show up at the first write.
 **Fix:** edit the token in the Cloudflare dashboard (My Profile, API Tokens) to hold the
 permissions that `task preflight ENV=<env>` prints, for the one zone and the one account, and put
 it into the environment's SOPS file.
+
+## SOPS: `error loading config: no matching creation rules found`
+
+**Cause:** `sops edit` or `sops encrypt` found no rule in `.sops.yaml` whose `path_regex` matches
+the file's path, or no `.sops.yaml` at all (the repository ships none; SOPS looks for it from the
+current folder upwards).
+
+**Fix:** run the command inside the clone and check the file name against the rules (for example
+`secrets/lab.enc.env`, not `secrets/lab.env`); the example in
+[configuration.md](configuration.md#write-sopsyaml) covers every file of the layout.
+
+## SOPS: `Failed to get the data key required to decrypt the SOPS file`
+
+**Cause:** none of the age keys that SOPS found can decrypt the file: the key is not among the
+file's recipients (each recipient is listed with `FAILED` below the message), the key file is not
+where SOPS looks (`~/.config/sops/age/keys.txt`, or `SOPS_AGE_KEY_FILE`, or the key itself in
+`SOPS_AGE_KEY`), or the file was encrypted before your key was added to `.sops.yaml`.
+
+**Fix:** `age-keygen -y ~/.config/sops/age/keys.txt` prints your public key; compare it with the
+recipients in `.sops.yaml`. If it is listed there but not in the file, someone who can decrypt the
+file runs `sops updatekeys <file>` and commits the result. In CI, check that the GitHub
+environment's secret `SOPS_AGE_KEY` holds the private key whose public key the rule lists.
 
 ## `dns_backup.sh: no recipient`
 

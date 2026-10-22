@@ -1,0 +1,25 @@
+- name: Create the parent directory of the spool directory
+  ansible.builtin.file:
+    path: "{{ deploy_target_spool_dir | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Owner: the upload account (writes); group: the run group (reads and deletes processed files).
+# The setgid bit gives every uploaded file the run group.
+- name: Create the spool directory (owner upload account, group run group, setgid, mode 2770)
+  ansible.builtin.file:
+    path: "{{ deploy_target_spool_dir }}"
+    state: directory
+    owner: "{{ deploy_target_user }}"
+    group: "{{ deploy_target_run_group }}"
+    mode: "2770"
+
+- name: Create the release root (owner run user, mode 0750)
+  ansible.builtin.file:
+    path: "{{ deploy_target_release_root }}"
+    state: directory
+    owner: "{{ deploy_target_run_user }}"
+    group: "{{ deploy_target_run_group }}"
+    mode: "0750"

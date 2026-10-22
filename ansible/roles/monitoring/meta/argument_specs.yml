@@ -1,0 +1,190 @@
+argument_specs:
+  main:
+    short_description: node_exporter on a private address, and Uptime Kuma with a monitor checklist
+    description:
+      - Installs node_exporter from its release archive (pinned version and sha256) as a sandboxed
+        systemd service that listens on loopback or a private address only.
+      - Optionally runs Uptime Kuma in a container published on loopback or a private address (the
+        docker role must run first) and renders the monitors to create into a checklist file.
+      - Opens the node_exporter port in the nftables drop-in directory of the base role only for
+        the configured sources.
+    options:
+      monitoring_node_exporter_enabled:
+        type: bool
+        default: true
+        description: Install and run node_exporter.
+      monitoring_node_exporter_version:
+        type: str
+        default: "1.12.1"
+        description: >-
+          node_exporter release to install. Change monitoring_node_exporter_checksums with it (from
+          the release's sha256sums.txt).
+      monitoring_node_exporter_checksums:
+        type: dict
+        default:
+          amd64: b51d8a76aa2a9156a55d501aca6276fae09e262259a5e4e831d2c2222f084e63
+          arm64: ad35b605f9954b9f1ffddf5ba054bdc5a98d790b9eae5291e1eeb83f1ecbd0e7
+        description: >-
+          sha256 of the release archive for each architecture (amd64, arm64); the download fails
+          when the archive differs.
+      monitoring_node_exporter_download_url:
+        type: str
+        default: https://github.com/prometheus/node_exporter/releases/download
+        description: >-
+          Base URL of the release archives; the role appends the release tag and the archive name
+          of the version and architecture, as on the release page.
+      monitoring_node_exporter_listen_address:
+        type: str
+        default: 127.0.0.1
+        description: >-
+          Address node_exporter listens on: loopback or a private address (127.0.0.0/8 or ::1, the
+          RFC 1918 networks, the RFC 6598 shared address space or an IPv6 unique local
+          address in fc00::/7). The role refuses any other, including 0.0.0.0 and ::.
+      monitoring_node_exporter_port:
+        type: int
+        default: 9100
+        description: TCP port of node_exporter.
+      monitoring_node_exporter_textfile_dir:
+        type: str
+        default: /var/lib/node_exporter/textfile
+        description: >-
+          Directory of the textfile collector: other jobs (for example a backup) write *.prom files
+          here, and node_exporter exports their metrics.
+      monitoring_node_exporter_extra_args:
+        type: list
+        elements: str
+        default: []
+        description: >-
+          More command-line flags for node_exporter, for example --collector.systemd. Flags that set
+          the listen address or the textfile directory are refused.
+      monitoring_node_exporter_allowed_sources:
+        type: list
+        elements: str
+        default: []
+        description: >-
+          IPv4 or IPv6 addresses or networks that may reach node_exporter (for example a Prometheus
+          server), written as accept rules into /etc/nftables.d/50-monitoring.nft. Allowed only
+          with a private (not loopback) listen address. Empty removes the drop-in.
+      monitoring_firewall_manage:
+        type: bool
+        default: false
+        description: >-
+          Write the drop-in even when /etc/nftables.d does not exist yet. Without it, the file is
+          written only when the directory exists.
+      monitoring_firewall_reload:
+        type: bool
+        default: true
+        description: >-
+          Restart nftables.service after the drop-in changed. Molecule sets it to false (a container
+          is no place to prove a loaded input ruleset; the drop-in is still validated).
+      monitoring_uptime_kuma_enabled:
+        type: bool
+        default: false
+        description: >-
+          Run Uptime Kuma in a container and render the monitor checklist. Needs Docker (the docker
+          role). Place it on a host other than the ones it watches.
+      monitoring_uptime_kuma_image:
+        type: str
+        # yamllint disable-line rule:line-length
+        default: "louislam/uptime-kuma:2.5.6-slim@sha256:5db97dbbef610276e1699f3ece586c3509c8fd35de75d45ff5109761a1b377dc"
+        description: >-
+          Uptime Kuma image, pinned by digest. The slim variant has no embedded MariaDB and no
+          browser engine; it stores its data in SQLite.
+      monitoring_uptime_kuma_container_name:
+        type: str
+        default: uptime-kuma
+        description: Name of the Uptime Kuma container.
+      monitoring_uptime_kuma_bind_address:
+        type: str
+        default: 127.0.0.1
+        description: >-
+          Address the Uptime Kuma port is published on: loopback or a private address, as for
+          node_exporter. Reach it through a tunnel with access control, not from the internet.
+      monitoring_uptime_kuma_port:
+        type: int
+        default: 3001
+        description: Host port for the Uptime Kuma web interface (the container listens on 3001).
+      monitoring_uptime_kuma_data_volume:
+        type: str
+        default: uptime-kuma-data
+        description: Docker volume that keeps the Uptime Kuma database (/app/data in the container).
+      monitoring_uptime_kuma_checklist_path:
+        type: str
+        default: /etc/uptime-kuma/monitors.md
+        description: >-
+          Where the role writes the checklist of monitors to create in Uptime Kuma (Markdown).
+      monitoring_monitors:
+        type: list
+        elements: dict
+        default: []
+        description: >-
+          Monitors for the checklist. Each item has name and type (http, keyword, port, ping, dns,
+          push or smtp), the target (url for http and keyword, plus keyword; host for port, ping,
+          dns and smtp, plus port for port and smtp) and optionally interval (seconds, at least 20,
+          default 60), accepted_status_codes (default 200-299), upside_down (default false) and
+          notes. Never put credentials into a monitor.
+        options:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+            choices: [http, keyword, port, ping, dns, push, smtp]
+          url:
+            type: str
+          keyword:
+            type: str
+          host:
+            type: str
+          port:
+            type: int
+          interval:
+            type: int
+            default: 60
+          accepted_status_codes:
+            type: str
+            default: 200-299
+          upside_down:
+            type: bool
+            default: false
+          notes:
+            type: str
+            default: ""
+      monitoring_external_probes:
+        type: list
+        elements: dict
+        default: []
+        description: >-
+          Read-only checks of hosts outside this environment, listed in their own section of the
+          checklist. Same keys as monitoring_monitors, but only the types http, keyword, port and
+          smtp, a host name (never an IP address) as target, no user name or password in a URL and
+          an interval of at least 300 seconds.
+        options:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+            choices: [http, keyword, port, smtp]
+          url:
+            type: str
+          keyword:
+            type: str
+          host:
+            type: str
+          port:
+            type: int
+          interval:
+            type: int
+            default: 300
+          accepted_status_codes:
+            type: str
+            default: 200-299
+          upside_down:
+            type: bool
+            default: false
+          notes:
+            type: str
+            default: ""

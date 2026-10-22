@@ -5,9 +5,9 @@
 #
 # Hooks from other repositories are pinned to a commit SHA (the tag in the comment, as
 # "pre-commit autoupdate --freeze" writes it); tests/test_repository_layout.py checks this. The
-# other hooks run the tools of this repository in the versions of docs/toolchain.md: yamllint from
-# the hash-pinned virtual environment ("task venv", then put .venv/bin on the PATH), gitleaks,
-# SOPS, OpenTofu and TFLint as installed binaries.
+# other hooks run the tools of this repository in the versions of docs/toolchain.md: yamllint and
+# ansible-lint from the hash-pinned virtual environment ("task venv", then put .venv/bin on the
+# PATH), gitleaks, SOPS, OpenTofu and TFLint as installed binaries.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
@@ -59,4 +59,11 @@ repos:
         entry: bash scripts/check_tofu.sh tflint
         language: system
         files: ^(tofu/|\.tflint\.hcl$)
+        pass_filenames: false
+
+      - id: ansible-lint
+        name: ansible-lint (production profile)
+        entry: bash -c 'ANSIBLE_ROLES_PATH="$PWD/ansible/roles" ansible-lint'
+        language: system
+        files: ^(ansible/|\.ansible-lint$|\.config/molecule/)
         pass_filenames: false

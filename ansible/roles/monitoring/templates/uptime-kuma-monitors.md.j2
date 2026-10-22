@@ -1,0 +1,59 @@
+{#- Checklist of the monitors to create in Uptime Kuma (monitoring role). -#}
+{%- macro target(m) -%}
+{%- if m.type in ['http', 'keyword'] -%}
+{{ m.url }}{% if m.type == 'keyword' %} (keyword: {{ m.keyword }}){% endif %}
+{%- elif m.type in ['port', 'smtp'] -%}
+{{ m.host }} port {{ m.port }}
+{%- elif m.type == 'push' -%}
+push URL from Uptime Kuma (the job calls it)
+{%- else -%}
+{{ m.host }}
+{%- endif -%}
+{%- endmacro -%}
+{%- macro expected(m, default_interval) -%}
+{%- if m.type in ['http', 'keyword'] -%}
+status {{ m.accepted_status_codes | default('200-299') }}
+{%- elif m.type == 'push' -%}
+a push every {{ m.interval | default(default_interval) }} s
+{%- else -%}
+reachable
+{%- endif -%}
+{%- if m.upside_down | default(false) %}, upside down (alert while it succeeds){% endif -%}
+{%- endmacro -%}
+{%- macro rows(monitors, default_interval) -%}
+| # | Name | Monitor type | Target | Up when | Interval | Notes |
+|---|---|---|---|---|---|---|
+{% for m in monitors %}
+| {{ loop.index }} | {{ m.name }} | {{ __monitoring_type_labels[m.type] }} | {{ target(m) }} | {{ expected(m, default_interval) }} | {{ m.interval | default(default_interval) }} s | {{ m.notes | default('') }} |
+{% endfor %}
+{%- endmacro -%}
+# Uptime Kuma monitors on {{ inventory_hostname }}
+
+<!-- {{ ansible_managed }} -->
+
+Uptime Kuma keeps its monitors in its own database and offers no supported configuration file
+or API for them, so create each monitor below once by hand: open Uptime Kuma (published on
+{{ __monitoring_uptime_kuma_publish.rsplit(':', 1)[0] }}, reached through its tunnel hostname),
+choose "Add New Monitor" and copy the values. Add a notification (for example a Discord
+webhook) under Settings, Notifications, and attach it to each monitor. Never put a password or
+token into a monitor; Uptime Kuma stores them in clear text.
+
+## Monitors
+
+{% if monitoring_monitors | length > 0 %}
+{{ rows(monitoring_monitors, 60) }}
+{% else %}
+No monitors are listed in monitoring_monitors.
+{% endif %}
+
+## External probes
+
+Read-only checks of hosts outside this environment: by host name only, no login, no agent on
+those hosts, and at most one check per target every 5 minutes. They are a second opinion next
+to the monitoring of those hosts, because this monitor is down whenever its own host is.
+
+{% if monitoring_external_probes | length > 0 %}
+{{ rows(monitoring_external_probes, 300) }}
+{% else %}
+No probes are listed in monitoring_external_probes.
+{% endif %}

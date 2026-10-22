@@ -1,0 +1,38 @@
+# __monitoring_firewall_write (assert.yml): monitoring_firewall_manage is true or /etc/nftables.d
+# exists. Without monitoring_node_exporter_allowed_sources there is no rule, and an old drop-in
+# is removed: node_exporter is then reachable from its own host only.
+- name: Create the nftables drop-in directory
+  ansible.builtin.file:
+    path: "{{ __monitoring_nft_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - monitoring_firewall_manage | bool
+    - monitoring_node_exporter_enabled | bool
+    - monitoring_node_exporter_allowed_sources | length > 0
+
+# The candidate file is checked together with /etc/nftables.conf before it replaces the old one.
+- name: Write the node_exporter rules (50-monitoring.nft)
+  ansible.builtin.template:
+    src: 50-monitoring.nft.j2
+    dest: "{{ __monitoring_nft_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /bin/bash -c 'set -o pipefail; cat /etc/nftables.conf %s | nft --check --file /dev/stdin'
+  when:
+    - __monitoring_firewall_write | bool
+    - monitoring_node_exporter_enabled | bool
+    - monitoring_node_exporter_allowed_sources | length > 0
+  notify: Reload nftables
+
+- name: Remove the node_exporter rules when no source is allowed
+  ansible.builtin.file:
+    path: "{{ __monitoring_nft_dropin }}"
+    state: absent
+  when:
+    - __monitoring_firewall_write | bool
+    - not (monitoring_node_exporter_enabled | bool and monitoring_node_exporter_allowed_sources | length > 0)
+  notify: Reload nftables

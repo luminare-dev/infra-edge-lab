@@ -1,0 +1,71 @@
+- name: Create the node_exporter group
+  ansible.builtin.group:
+    name: "{{ __monitoring_node_exporter_user }}"
+    system: true
+    state: present
+
+- name: Create the node_exporter user (no login, no home)
+  ansible.builtin.user:
+    name: "{{ __monitoring_node_exporter_user }}"
+    group: "{{ __monitoring_node_exporter_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: /nonexistent
+    create_home: false
+    state: present
+
+- name: Create the directories for the archive, the program and the textfile collector
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ __monitoring_node_exporter_archive | dirname }}"
+    - "{{ __monitoring_node_exporter_install_dir }}"
+    - "{{ monitoring_node_exporter_textfile_dir | dirname }}"
+    - "{{ monitoring_node_exporter_textfile_dir }}"
+
+- name: Download the node_exporter release archive (checked against the pinned sha256)
+  ansible.builtin.get_url:
+    url: "{{ __monitoring_node_exporter_url }}"
+    dest: "{{ __monitoring_node_exporter_archive }}"
+    checksum: "sha256:{{ monitoring_node_exporter_checksums[__monitoring_arch] }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Unpack node_exporter
+  ansible.builtin.unarchive:
+    src: "{{ __monitoring_node_exporter_archive }}"
+    dest: "{{ __monitoring_node_exporter_install_dir }}"
+    remote_src: true
+    owner: root
+    group: root
+    creates: "{{ __monitoring_node_exporter_install_dir }}/{{ __monitoring_node_exporter_dirname }}/node_exporter"
+
+- name: Point /usr/local/bin/node_exporter at the pinned version
+  ansible.builtin.file:
+    src: "{{ __monitoring_node_exporter_install_dir }}/{{ __monitoring_node_exporter_dirname }}/node_exporter"
+    dest: "{{ __monitoring_node_exporter_binary }}"
+    state: link
+    owner: root
+    group: root
+  notify: Restart node_exporter
+
+- name: Write the node_exporter unit
+  ansible.builtin.template:
+    src: node_exporter.service.j2
+    dest: "{{ __monitoring_node_exporter_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart node_exporter
+
+- name: Enable and start node_exporter
+  ansible.builtin.systemd_service:
+    name: node_exporter.service
+    enabled: true
+    state: started
+    daemon_reload: true

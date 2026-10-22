@@ -1,0 +1,14 @@
+# getent fails for a user that does not exist, so the role never creates an account here.
+- name: Check that every docker user exists
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ item }}"
+  loop: "{{ docker_users }}"
+
+- name: Add the docker users to the docker group
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups:
+      - docker
+    append: true
+  loop: "{{ docker_users }}"

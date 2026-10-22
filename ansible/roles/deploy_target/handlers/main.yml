@@ -1,0 +1,9 @@
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart the path unit
+  ansible.builtin.systemd_service:
+    name: "{{ deploy_target_unit_name }}.path"
+    state: restarted
+    daemon_reload: true

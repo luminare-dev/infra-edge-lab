@@ -4,7 +4,9 @@
 #
 # It installs the hash-pinned Python tools from requirements-test.txt into a virtual environment
 # (TEST_VENV; default .venv, in CI $RUNNER_TEMP/venv-test) and runs the unit tests with that
-# environment first on the PATH, so the tests also check the installed tool versions.
+# environment first on the PATH, so the tests also check the installed tool versions. Then it
+# runs ansible-lint (production profile, offline; .ansible-lint) over the roles in ansible/roles
+# and their Molecule playbooks, with the collections of the hash-pinned "ansible" package.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -27,3 +29,4 @@ PATH="$(cd "$venv/bin" && pwd):$PATH"
 REQUIREMENTS_TEST_INSTALLED=1
 export PATH REQUIREMENTS_TEST_INSTALLED
 python3 -m unittest discover -s tests -v
+ansible-lint

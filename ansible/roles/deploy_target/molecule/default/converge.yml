@@ -1,0 +1,23 @@
+- name: Converge
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Read the uploader's public key that prepare.yml generated
+      ansible.builtin.slurp:
+        src: /root/ci-key.pub
+      register: deploy_target_test_key
+
+    - name: Apply the deploy_target role
+      ansible.builtin.include_role:
+        name: deploy_target
+      vars:
+        deploy_target_authorized_keys:
+          # "ssh-ed25519 <base64>" without the comment of the generated file.
+          - key: "{{ (deploy_target_test_key.content | b64decode).split()[:2] | join(' ') }}"
+            comment: molecule-ci
+            # Uploads come from the host itself, as through a tunnel connector on the host.
+            from:
+              - 127.0.0.1
+              - "::1"
+        deploy_target_script_src: "{{ playbook_dir }}/files/deploy-stub"
+        deploy_target_keep_versions: 2

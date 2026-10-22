@@ -1,8 +1,10 @@
 # Runbook
 
-At this version the repository runs no service; the failures below are those of the repository's
-own checks, of the OpenTofu checks (CI job `tofu`, `task tofu`) and of the environments' state
-([ADR 0013](adr/0013-encrypted-state-in-r2-with-a-lock-file.md)).
+The failures below are those of the repository's own checks, of the OpenTofu checks (CI job
+`tofu`, `task tofu`) and of the environments' state
+([ADR 0013](adr/0013-encrypted-state-in-r2-with-a-lock-file.md)), followed by the services that
+the roles in `ansible/roles` set up on a host: Docker, node_exporter, Uptime Kuma and the deploy
+target. No playbook of this version applies the roles to an environment yet.
 
 ## Failure: the secret scan finds a secret
 
@@ -32,7 +34,7 @@ own checks, of the OpenTofu checks (CI job `tofu`, `task tofu`) and of the envir
 | **Impact** | The update waits; the current pins stay in use. |
 | **Diagnosis** | Open the failed job; compare the release notes of the updated dependency. A version copied into the docs is not the cause: `tests/test_toolchain.py` keeps the Python versions in the requirements files only. |
 | **Mitigation** | Leave the pull request open or close it; Dependabot proposes the next version later. |
-| **Fix** | Adapt the code in the same pull request, or pin around the broken version with a comment that names the issue. |
+| **Fix** | Adapt the code in the same pull request, or pin around the broken version with a comment that names the issue. An update of the `ansible` package always needs one edit: set the community collections in `ansible/requirements.yml` to the versions the new package bundles; `tests/test_ansible.py` names each one ([ADR 0016](adr/0016-collections-from-git-tags-and-one-pinned-bundle.md)). |
 
 ## Failure: the zone guard rejects a name or a record
 
@@ -124,3 +126,75 @@ OpenTofu merges with `encryption.tofu`); nothing is committed. Tested on 2026-10
 | **Diagnosis** | `ls tofu/envs/<env>/backend_override.tf`: the file is there after `task init ENV=<env> BACKEND=local`. |
 | **Mitigation** | Do not apply that plan. |
 | **Fix** | `task init ENV=<env>` (without `BACKEND=local`) removes the override file and switches back to the remote state. |
+
+## Failure: a Molecule scenario leaves containers behind
+
+| | |
+|---|---|
+| **Meaning** | `task molecule` or `molecule test` was interrupted before its last destroy step. |
+| **Impact** | The instances `lab-<role>-debian13` and `lab-<role>-ubuntu2404` keep running; the next run of the same role destroys them first, so it is not blocked. |
+| **Diagnosis** | `docker ps -a --filter name=lab-docker- --filter name=lab-monitoring- --filter name=lab-deploy_target-`. |
+| **Mitigation** | In `ansible/roles/<role>`, with `MOLECULE_ROLE=<role>`: `molecule destroy`. |
+| **Fix** | Nothing else; the scenarios keep no state outside their instances. |
+
+## Failure: containers lose their network after a firewall change
+
+| | |
+|---|---|
+| **Meaning** | On a Docker host, containers cannot reach the outside, or published ports stop answering, after `nftables.service` was restarted (its `flush ruleset` also removes Docker's rules). |
+| **Impact** | Services in containers (for example Uptime Kuma) cannot check anything; ports published on a private address are unreachable. |
+| **Diagnosis** | `nft list tables` shows no `ip nat` table of Docker; `systemctl show docker -p PartOf` does not list `nftables.service` (the role ran with `docker_restart_with_nftables: false`), or `/etc/nftables.d/60-docker.nft` is missing. |
+| **Mitigation** | `systemctl restart docker` (with live restore the containers keep running). |
+| **Fix** | Run the docker role with `docker_restart_with_nftables: true` (the default) and with the base role's `/etc/nftables.d` in place, so the drop-ins are written ([ADR 0019](adr/0019-docker-ports-on-loopback-and-a-firewall-that-restarts-docker.md)). |
+
+## Procedure: create the Uptime Kuma monitors
+
+1. Open Uptime Kuma through its tunnel hostname (or an SSH port forward to
+   `127.0.0.1:3001`) and create the admin account on the first visit; keep its password in the
+   password manager.
+2. Read `/etc/uptime-kuma/monitors.md` on the monitoring host (`sudo cat`). For each row, choose
+   "Add New Monitor", the monitor type of the row, and copy name, target, accepted status codes,
+   interval and the "upside down" setting.
+3. Under Settings, Notifications, add the notification channel and attach it to every monitor.
+4. Stop one watched service for a moment and check that the alert arrives, then that it clears.
+
+Repeat steps 2 and 3 after a change of `monitoring_monitors` or `monitoring_external_probes`; the
+checklist does not track monitors that were changed in the web interface
+([ADR 0018](adr/0018-uptime-kuma-monitors-as-a-checklist.md)).
+
+## Procedure: upgrade node_exporter or Uptime Kuma
+
+1. node_exporter: read the new release's `sha256sums.txt`, then change
+   `monitoring_node_exporter_version` and both values of `monitoring_node_exporter_checksums` in
+   the role defaults (or the inventory) and in [toolchain.md](toolchain.md).
+2. Uptime Kuma: stop the container and back up its data volume first, for example with the
+   BusyBox image that the docker role's tests use:
+
+   ```bash
+   docker stop uptime-kuma
+   docker run --rm -v uptime-kuma-data:/data:ro -v "$PWD":/backup \
+     busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e \
+     tar -czf /backup/uptime-kuma-data.tgz -C /data .
+   ```
+
+   Then change `monitoring_uptime_kuma_image` to the new tag and its digest
+   (`docker buildx imagetools inspect louislam/uptime-kuma:<tag>` shows the digest).
+3. Run the role; it restarts node_exporter and recreates the container with the same volume.
+   Roll back the same way with the old values.
+
+## Failure: the deploy path unit no longer starts the deploy
+
+| | |
+|---|---|
+| **Meaning** | An upload with its `.ready` marker stays in the spool directory; `systemctl status luminare-deploy.path` shows `failed` with `unit-start-limit-hit` or `trigger-limit-hit`. |
+| **Impact** | No deploy runs until the units are reset. |
+| **Diagnosis** | `journalctl -u luminare-deploy.service` shows the script's output. A marker the script did not delete makes the path unit start the service again and again until systemd stops it. `ls -l /srv/luminare/incoming` shows files that the game server user cannot read (mode `0600`, uploaded without `--chmod=F640`). |
+| **Mitigation** | Move the leftover files out of the spool directory, then `systemctl reset-failed luminare-deploy.service luminare-deploy.path` and `systemctl restart luminare-deploy.path`. |
+| **Fix** | Make the deploy script delete every marker it has handled, also after a failure, and make the uploader send group-readable files. |
+
+## Procedure: rotate or revoke an upload key
+
+1. Add the new public key to `deploy_target_authorized_keys` next to the old one and run the role.
+2. Change the private key in the CI secrets and check one upload.
+3. Remove the old key from the list and run the role again; `authorized_keys` then holds exactly
+   the remaining keys. To revoke a leaked key at once, skip steps 1 and 2.

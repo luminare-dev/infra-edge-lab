@@ -1,0 +1,87 @@
+# Shared Molecule configuration for the role scenarios (ansible/roles/<role>/molecule/default/).
+# Molecule reads this file from the repository root and merges the scenario's molecule.yml on
+# top of it, so a scenario only adds what is special to its role (docs/adr/0015).
+#
+# Run one role locally (Docker that allows privileged containers, the tools of
+# requirements-test.txt; "task molecule ROLE=<role>" does the same):
+#   cd ansible/roles/<role> && export MOLECULE_ROLE=<role>
+#   molecule test                                       # both platforms in one run
+#   molecule test --platform-name lab-<role>-debian13   # one platform, as one CI matrix job does
+# MOLECULE_ROLE goes into the instance names (lab-<role>-debian13, lab-<role>-ubuntu2404), so the
+# instances never clash with other roles or projects on one Docker daemon. CI runs one job per
+# role and platform suffix (tests/test_ansible.py keeps the ci.yml matrix equal to the platforms
+# below).
+#
+# Both platforms build images/systemd-host/Dockerfile, the host image of the docker_host module;
+# the build argument BASE selects Debian 13 or Ubuntu 24.04 (base images pinned by digest).
+# The roles get their community collections from the "ansible" package of requirements-test.txt,
+# so no dependency is downloaded from Ansible Galaxy.
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: docker
+platforms:
+  # The same container settings for both platforms: systemd as PID 1 needs a privileged container
+  # that shares the host cgroup namespace. /var/lib/docker and /var/lib/containerd are tmpfs
+  # mounts (with exec), because the docker and monitoring scenarios run Docker inside the
+  # instance and its overlay storage cannot stack on the instance's own overlay root file system.
+  - name: lab-${MOLECULE_ROLE:-role}-debian13
+    image: lab-molecule-debian13
+    dockerfile: ../../../../../images/systemd-host/Dockerfile
+    buildargs:
+      BASE: debian13
+    pre_build_image: false
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /run/lock
+      - /var/lib/docker:exec,size=2g
+      - /var/lib/containerd:exec,size=2g
+    command: /lib/systemd/systemd
+    groups:
+      - debian
+  - name: lab-${MOLECULE_ROLE:-role}-ubuntu2404
+    image: lab-molecule-ubuntu2404
+    dockerfile: ../../../../../images/systemd-host/Dockerfile
+    buildargs:
+      BASE: ubuntu2404
+    pre_build_image: false
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /run/lock
+      - /var/lib/docker:exec,size=2g
+      - /var/lib/containerd:exec,size=2g
+    command: /lib/systemd/systemd
+    groups:
+      - ubuntu
+provisioner:
+  name: ansible
+ansible:
+  cfg:
+    defaults:
+      callback_result_format: yaml
+  env:
+    # converge.yml and verify.yml include the roles of ansible/roles by name.
+    ANSIBLE_ROLES_PATH: ${MOLECULE_SCENARIO_DIRECTORY}/../../..
+verifier:
+  name: ansible
+scenario:
+  # One extra "destroy" before "syntax" removes the instances of an aborted earlier run.
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - verify
+    - destroy

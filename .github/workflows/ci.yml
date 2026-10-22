@@ -1,4 +1,5 @@
-# Caller: lint, tests and the full-history secret scan on every pull request and push to main.
+# Caller: lint, tests and the full-history secret scan on every pull request and push to main;
+# the Molecule scenarios of the roles in ansible/roles on pull requests, on demand and once a week.
 # Required checks for the main ruleset: "ci / lint-test" and "secrets / gitleaks".
 name: ci
 
@@ -6,6 +7,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "17 4 * * 3"   # Wednesdays 04:17 UTC: the roles against the current packages and images
   workflow_dispatch:
 
 permissions: {}
@@ -22,8 +25,9 @@ jobs:
     permissions:
       contents: read
     with:
-      # Installs the hash-pinned tools of requirements-test.txt into a virtual environment and
-      # runs the unit tests (the same command as "task test").
+      # Installs the hash-pinned tools of requirements-test.txt into a virtual environment, runs
+      # the unit tests and ansible-lint (production profile, offline; the same command as
+      # "task test").
       test-command: bash scripts/run_tests.sh
 
   secrets:
@@ -65,3 +69,106 @@ jobs:
         run: bash scripts/check_tofu.sh integration
       - name: Terraform compatibility (terraform validate)
         run: bash scripts/check_tofu.sh compat
+
+  # Molecule: a role x platform matrix over the roles that have
+  # ansible/roles/<role>/molecule/default/molecule.yml; each job tests one role on one platform of
+  # .config/molecule/config.yml (Debian 13 or Ubuntu 24.04) in systemd containers on the runner's
+  # Docker daemon. No credentials. Not run on pushes to main, where the same commit already
+  # passed as a pull request.
+  plan:
+    name: molecule-plan
+    if: ${{ github.event_name != 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      roles: ${{ steps.list.outputs.roles }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: List the roles with a Molecule scenario
+        id: list
+        run: |
+          set -euo pipefail
+          roles=$(find ansible/roles -mindepth 4 -maxdepth 4 -path 'ansible/roles/*/molecule/default/molecule.yml' \
+            | cut -d/ -f3 | sort | jq --raw-input --slurp --compact-output 'split("\n") | map(select(length > 0))')
+          echo "roles=${roles}" >> "$GITHUB_OUTPUT"
+          echo "Roles with a Molecule scenario: \`${roles}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  molecule-scenario:
+    name: molecule-scenario (${{ matrix.role }}, ${{ matrix.platform }})
+    needs: plan
+    if: ${{ needs.plan.outputs.roles != '[]' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        role: ${{ fromJSON(needs.plan.outputs.roles) }}
+        # The platform suffixes of .config/molecule/config.yml (instance lab-<role>-<platform>);
+        # tests/test_ansible.py keeps both lists equal.
+        platform: [debian13, ubuntu2404]
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the test tools (hash-pinned)
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes --only-binary=:all: -r requirements-test.txt
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+
+      - name: molecule test on one platform
+        working-directory: ansible/roles/${{ matrix.role }}
+        env:
+          MOLECULE_ROLE: ${{ matrix.role }}
+          PLATFORM: ${{ matrix.platform }}
+          PY_COLORS: "1"
+          ANSIBLE_FORCE_COLOR: "1"
+        run: molecule test --platform-name "lab-${MOLECULE_ROLE}-${PLATFORM}"
+
+  molecule:
+    # One stable check name for the matrix: fails when the plan or any role x platform job failed
+    # or was cancelled; passes when every job passed or when no role has a scenario.
+    name: molecule
+    needs: [plan, molecule-scenario]
+    if: ${{ always() && github.event_name != 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check the scenario results
+        env:
+          PLAN: ${{ needs.plan.result }}
+          SCENARIOS: ${{ needs.molecule-scenario.result }}
+          ROLES: ${{ needs.plan.outputs.roles }}
+        run: |
+          set -euo pipefail
+          echo "plan: ${PLAN}; scenarios: ${SCENARIOS}; roles: ${ROLES:-none}"
+          if [ "$PLAN" != "success" ]; then
+            echo "::error::the Molecule plan job did not succeed (${PLAN})"
+            exit 1
+          fi
+          case "$SCENARIOS" in
+            success) ;;
+            skipped)
+              if [ "$ROLES" != "[]" ]; then
+                echo "::error::role scenarios were skipped although roles were listed: ${ROLES}"
+                exit 1
+              fi
+              echo "No role has a Molecule scenario."
+              ;;
+            *)
+              echo "::error::at least one role scenario did not pass (${SCENARIOS})"
+              exit 1
+              ;;
+          esac

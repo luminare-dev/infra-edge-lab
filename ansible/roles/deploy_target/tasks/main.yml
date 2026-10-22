@@ -1,0 +1,13 @@
+# An upload-only SSH account (rrsync, write-only, one spool directory) and a path unit that runs a
+# deploy script as the game server user once an upload is marked complete.
+- name: Check the host and the settings before any change
+  ansible.builtin.import_tasks: assert.yml
+
+- name: Create the upload account and its keys
+  ansible.builtin.import_tasks: account.yml
+
+- name: Create the spool directory and the release root
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Install the deploy script and its systemd units
+  ansible.builtin.import_tasks: service.yml

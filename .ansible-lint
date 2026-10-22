@@ -1,0 +1,29 @@
+# ansible-lint configuration (https://docs.ansible.com/projects/lint/configuring/).
+# The production profile is the strictest one. scripts/run_tests.sh (CI "ci / lint-test", "task
+# test") and "task lint" run it from the repository root.
+profile: production
+
+# Lint with the collections of the hash-pinned "ansible" package (requirements-test.txt); never
+# install anything from the network (ansible/requirements.yml names collections at git tags that
+# CI does not fetch).
+offline: true
+
+# ansible-lint 26.10.1 still lists ansible-core 2.15-2.19 as the supported releases for the
+# meta-runtime rule; 2.20 and 2.21 are maintained releases too (ansible-core support matrix).
+supported_ansible_also:
+  - "2.20."
+  - "2.21."
+
+# Files that are not Ansible content, and caches, installed collections and build output.
+exclude_paths:
+  - .ansible/
+  - .cache/
+  - .github/
+  - .venv/
+  - ansible/collections/
+  - dist/
+  - docs/brand/
+  - images/
+  - secrets/
+  - tests/fixtures/
+  - tofu/

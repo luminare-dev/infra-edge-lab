@@ -1,0 +1,36 @@
+# Internal values of the docker role (not meant to be overridden).
+
+__docker_distribution: "{{ ansible_facts['distribution'] | lower }}"
+__docker_apt_arch: >-
+  {{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] | default('unsupported') }}
+__docker_keyring: /etc/apt/keyrings/docker.asc
+
+# Packages from the distribution that conflict with Docker's packages (Docker's installation
+# guide lists them). The role stops when one is installed instead of removing it, because
+# removing docker.io would stop the containers that run with it.
+__docker_conflicting_packages:
+  - docker.io
+  - docker-doc
+  - docker-compose
+  - docker-compose-v2
+  - podman-docker
+  - containerd
+  - runc
+
+# python3-debian: the deb822_repository module needs it; python3-requests: the community.docker
+# modules talk to the Docker API with it.
+__docker_support_packages:
+  - ca-certificates
+  - python3-debian
+  - python3-requests
+
+__docker_daemon_config: "{{ docker_daemon_options | combine({'ip': docker_default_bind_ip}) }}"
+__docker_service_dropin: /etc/systemd/system/docker.service.d/10-nftables.conf
+__docker_nft_dir: /etc/nftables.d
+__docker_nft_dropin: /etc/nftables.d/60-docker.nft
+
+# Loopback or private addresses: 127.0.0.0/8 or ::1, the RFC 1918 networks, the RFC 6598 shared
+# address space and IPv6 unique local addresses (fc00::/7). The same pattern is in the
+# monitoring role; tests/test_ansible.py checks both and tries it on sample addresses.
+# yamllint disable-line rule:line-length
+__docker_private_address_re: '^(127(\.[0-9]{1,3}){3}|10(\.[0-9]{1,3}){3}|172\.(1[6-9]|2[0-9]|3[01])(\.[0-9]{1,3}){2}|192\.168(\.[0-9]{1,3}){2}|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])(\.[0-9]{1,3}){2}|::1|[fF][cCdD][0-9a-fA-F]{2}:[0-9a-fA-F:]*)$'

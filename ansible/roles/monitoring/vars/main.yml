@@ -1,0 +1,42 @@
+# Internal values of the monitoring role (not meant to be overridden).
+
+__monitoring_arch: >-
+  {{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] | default('unsupported') }}
+__monitoring_node_exporter_dirname: >-
+  node_exporter-{{ monitoring_node_exporter_version }}.linux-{{ __monitoring_arch }}
+__monitoring_node_exporter_archive: "/var/cache/node_exporter/{{ __monitoring_node_exporter_dirname }}.tar.gz"
+__monitoring_node_exporter_url: >-
+  {{ monitoring_node_exporter_download_url }}/v{{ monitoring_node_exporter_version
+  }}/{{ __monitoring_node_exporter_dirname }}.tar.gz
+__monitoring_node_exporter_install_dir: /usr/local/lib/node_exporter
+__monitoring_node_exporter_binary: /usr/local/bin/node_exporter
+__monitoring_node_exporter_unit: /etc/systemd/system/node_exporter.service
+__monitoring_node_exporter_user: node_exporter
+
+# "host:port" for the listen flag, with brackets around an IPv6 address.
+__monitoring_node_exporter_listen: >-
+  {{ ('[' ~ monitoring_node_exporter_listen_address ~ ']') if ':' in monitoring_node_exporter_listen_address
+     else monitoring_node_exporter_listen_address }}:{{ monitoring_node_exporter_port }}
+__monitoring_uptime_kuma_publish: >-
+  {{ ('[' ~ monitoring_uptime_kuma_bind_address ~ ']') if ':' in monitoring_uptime_kuma_bind_address
+     else monitoring_uptime_kuma_bind_address }}:{{ monitoring_uptime_kuma_port }}:3001
+
+__monitoring_nft_dir: /etc/nftables.d
+__monitoring_nft_dropin: /etc/nftables.d/50-monitoring.nft
+
+# Labels of the monitor types in Uptime Kuma's "Add New Monitor" dialog.
+__monitoring_type_labels:
+  http: HTTP(s)
+  keyword: HTTP(s) - Keyword
+  port: TCP Port
+  ping: Ping
+  dns: DNS
+  push: Push
+  smtp: SMTP
+
+# Loopback or private addresses: 127.0.0.0/8 or ::1, the RFC 1918 networks, the RFC 6598 shared
+# address space and IPv6 unique local addresses (fc00::/7). The same pattern is in the
+# docker role; tests/test_ansible.py checks both and tries it on sample addresses.
+# yamllint disable-line rule:line-length
+__monitoring_private_address_re: '^(127(\.[0-9]{1,3}){3}|10(\.[0-9]{1,3}){3}|172\.(1[6-9]|2[0-9]|3[01])(\.[0-9]{1,3}){2}|192\.168(\.[0-9]{1,3}){2}|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])(\.[0-9]{1,3}){2}|::1|[fF][cCdD][0-9a-fA-F]{2}:[0-9a-fA-F:]*)$'
+__monitoring_loopback_address_re: '^(127(\.[0-9]{1,3}){3}|::1)$'

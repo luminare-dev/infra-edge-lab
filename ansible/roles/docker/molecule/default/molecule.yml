@@ -1,0 +1,7 @@
+# Molecule scenario of the docker role. The driver, both platforms (Debian 13 and Ubuntu 24.04)
+# and the test sequence come from .config/molecule/config.yml; run it with
+#   cd ansible/roles/docker && export MOLECULE_ROLE=docker && molecule test
+# Docker runs inside the instance; prepare.yml gives the instance the firewall layout of the
+# luminare.infra_edge base role, and verify.yml loads it to test the forward rules.
+scenario:
+  name: default

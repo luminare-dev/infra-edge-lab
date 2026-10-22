@@ -1,12 +1,18 @@
 # Python tools for the Ansible checks and tests of this repository (ansible-lint, Molecule with
 # the Docker driver). requirements-test.txt is generated from this file; never edit it by hand.
 #
+# The "ansible" package brings the community collections that the roles, ansible-lint and the
+# Molecule Docker driver use (community.docker, ansible.posix, community.sops, ...), pinned and
+# hashed with it, so CI never downloads a collection from Ansible Galaxy. ansible/requirements.yml
+# pins the same versions for real runs (tests/test_ansible.py keeps them equal).
+#
 # Compile with Python 3.12 (the python3 of the GitHub ubuntu-24.04 runner) on Linux x86_64,
 # using pip-tools 7.5.2 with click 8.2.1 (docs/toolchain.md has the full command):
 #   pip-compile --generate-hashes --allow-unsafe --strip-extras \
 #     --output-file=requirements-test.txt requirements-test.in
 # Install with:
 #   pip install --require-hashes --only-binary=:all: -r requirements-test.txt
+ansible==14.5.0
 ansible-core==2.21.5
 ansible-lint==26.10.1
 molecule==26.10.0

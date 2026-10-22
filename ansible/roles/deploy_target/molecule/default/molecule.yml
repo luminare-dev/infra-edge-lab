@@ -1,0 +1,8 @@
+# Molecule scenario of the deploy_target role. The driver, both platforms (Debian 13 and Ubuntu
+# 24.04) and the test sequence come from .config/molecule/config.yml; run it with
+#   cd ansible/roles/deploy_target && export MOLECULE_ROLE=deploy_target && molecule test
+# prepare.yml starts an SSH server with "AllowGroups sshusers" (as the luminare.infra_edge base
+# role configures it) and creates the game server user; verify.yml uploads through SSH and rrsync
+# with a key generated in the instance, as a CI job would.
+scenario:
+  name: default

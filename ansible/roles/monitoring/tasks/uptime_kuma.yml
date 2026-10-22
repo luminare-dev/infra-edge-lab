@@ -1,0 +1,39 @@
+# Uptime Kuma keeps its monitors in its own database and has no supported configuration file or
+# API for them, so the role runs the container and writes the monitors to create by hand into a
+# checklist (docs/adr/0018).
+- name: Create the Uptime Kuma data volume
+  community.docker.docker_volume:
+    name: "{{ monitoring_uptime_kuma_data_volume }}"
+    state: present
+
+# The port is published on monitoring_uptime_kuma_bind_address only (loopback by default); the web
+# interface is meant to be reached through a tunnel with access control.
+- name: Run the Uptime Kuma container
+  community.docker.docker_container:
+    name: "{{ monitoring_uptime_kuma_container_name }}"
+    image: "{{ monitoring_uptime_kuma_image }}"
+    pull: missing
+    state: started
+    restart_policy: unless-stopped
+    published_ports:
+      - "{{ __monitoring_uptime_kuma_publish }}"
+    volumes:
+      - "{{ monitoring_uptime_kuma_data_volume }}:/app/data"
+    security_opts:
+      - no-new-privileges:true
+
+- name: Create the checklist directory
+  ansible.builtin.file:
+    path: "{{ monitoring_uptime_kuma_checklist_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the monitor checklist
+  ansible.builtin.template:
+    src: uptime-kuma-monitors.md.j2
+    dest: "{{ monitoring_uptime_kuma_checklist_path }}"
+    owner: root
+    group: root
+    mode: "0644"

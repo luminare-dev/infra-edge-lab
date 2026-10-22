@@ -1,0 +1,266 @@
+# Checks of the docker role: packages, daemon settings, the drop-ins, a container whose published
+# port must bind to 127.0.0.1 only, the forward rules with the firewall loaded, the restart of
+# Docker by nftables.service, and the refusals of the role's checks.
+- name: Verify
+  hosts: all
+  gather_facts: true
+  vars:
+    # A small test image (BusyBox httpd and wget), pinned by digest; checked 2026-10-21.
+    docker_test_image: busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+  tasks:
+    - name: Read the Docker server information
+      ansible.builtin.command:
+        cmd: docker info --format json
+      register: docker_info_raw
+      changed_when: false
+
+    - name: Report the Docker version from Docker's stable channel
+      ansible.builtin.debug:
+        msg: "Docker Engine {{ (docker_info_raw.stdout | from_json).ServerVersion }}"
+
+    - name: Docker runs with the role's daemon settings
+      vars:
+        docker_info: "{{ docker_info_raw.stdout | from_json }}"
+      ansible.builtin.assert:
+        that:
+          - docker_info.ServerVersion is match('^[0-9]+[.]')
+          - docker_info.LoggingDriver == 'journald'
+          - docker_info.LiveRestoreEnabled
+        quiet: true
+
+    - name: Read /etc/docker/daemon.json
+      ansible.builtin.slurp:
+        src: /etc/docker/daemon.json
+      register: docker_daemon_json
+
+    - name: Daemon.json holds the defaults with "ip" set to 127.0.0.1
+      ansible.builtin.assert:
+        that:
+          - >-
+            (docker_daemon_json.content | b64decode | from_json)
+            == {'ip': '127.0.0.1', 'log-driver': 'journald', 'live-restore': true}
+        quiet: true
+
+    - name: Read the repository signing key
+      ansible.builtin.stat:
+        path: /etc/apt/keyrings/docker.asc
+        checksum_algorithm: sha256
+      register: docker_signing_file
+
+    - name: Read the repository definition
+      ansible.builtin.slurp:
+        src: /etc/apt/sources.list.d/docker.sources
+      register: docker_sources
+
+    - name: The key is the pinned one and the repository is signed by it
+      vars:
+        docker_sources_text: "{{ docker_sources.content | b64decode }}"
+      ansible.builtin.assert:
+        that:
+          - docker_signing_file.stat.checksum == '1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570'
+          - docker_signing_file.stat.mode == '0644'
+          - "'Signed-By: /etc/apt/keyrings/docker.asc' in docker_sources_text"
+          - "'URIs: https://download.docker.com/linux/' ~ ansible_facts['distribution'] | lower in docker_sources_text"
+          - "'Suites: ' ~ ansible_facts['distribution_release'] in docker_sources_text"
+        quiet: true
+
+    - name: Read the state of docker.service
+      ansible.builtin.systemd_service:
+        name: docker.service
+      register: docker_unit
+
+    - name: Docker is enabled and is part of nftables.service
+      ansible.builtin.assert:
+        that:
+          - docker_unit.status.UnitFileState == 'enabled'
+          - "'nftables.service' in docker_unit.status.PartOf.split()"
+          - "'nftables.service' in docker_unit.status.After.split()"
+        quiet: true
+
+    - name: Read the forward rules
+      ansible.builtin.slurp:
+        src: /etc/nftables.d/60-docker.nft
+      register: docker_nft
+
+    - name: The drop-in holds accept rules for the forward chain only
+      vars:
+        docker_rules: "{{ (docker_nft.content | b64decode).splitlines() | reject('match', '^(#.*)?$') | list }}"
+      ansible.builtin.assert:
+        that:
+          - docker_rules | length == 6
+          - docker_rules | reject('match', '^add rule inet filter forward .* accept$') | list | length == 0
+          - "'add rule inet filter forward oifname \"docker0\" ct status dnat accept' in docker_rules"
+        quiet: true
+
+    - name: The ruleset with the drop-in passes nft --check
+      ansible.builtin.command:
+        cmd: nft --check --file /etc/nftables.conf
+      changed_when: false
+
+    - name: Read the members of the docker group
+      ansible.builtin.getent:
+        database: group
+        key: docker
+
+    - name: The docker user is in the docker group
+      ansible.builtin.assert:
+        that:
+          - "'lab-operator' in ansible_facts['getent_group']['docker'][2].split(',')"
+        quiet: true
+
+    - name: Start a container with a port published without an address (-p 8080:80)
+      ansible.builtin.command:
+        cmd: >-
+          docker run --detach --name molecule-web --restart unless-stopped --publish 8080:80
+          {{ docker_test_image }} httpd -f -p 80 -h /etc
+      changed_when: true
+
+    - name: Wait for the published port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 8080
+        timeout: 30
+
+    - name: List the listening TCP sockets
+      ansible.builtin.command:
+        cmd: ss -Htln
+      register: docker_listen
+      changed_when: false
+
+    - name: The published port listens on 127.0.0.1 only
+      vars:
+        docker_sockets: >-
+          {{ docker_listen.stdout_lines | map('split') | map(attribute=3) | select('match', '.*:8080$') | list }}
+      ansible.builtin.assert:
+        that:
+          - docker_sockets == ['127.0.0.1:8080']
+        fail_msg: "Port 8080 listens on {{ docker_sockets }}"
+        quiet: true
+
+    - name: The container answers on 127.0.0.1:8080
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/hostname
+        return_content: true
+      register: docker_http
+
+    - name: Read the start time of Docker
+      ansible.builtin.systemd_service:
+        name: docker.service
+      register: docker_started_before
+
+    # Without the drop-in, the forward policy drop of the base ruleset cuts every container off.
+    - name: Move the drop-in aside
+      ansible.builtin.copy:
+        src: /etc/nftables.d/60-docker.nft
+        dest: /root/60-docker.nft
+        remote_src: true
+        mode: "0644"
+
+    - name: Remove the drop-in from the directory
+      ansible.builtin.file:
+        path: /etc/nftables.d/60-docker.nft
+        state: absent
+
+    - name: Load the firewall without the drop-in
+      ansible.builtin.systemd_service:
+        name: nftables.service
+        state: restarted
+
+    - name: Without the drop-in, a container cannot reach the outside
+      ansible.builtin.command:
+        cmd: docker exec molecule-web wget -q -T 5 -O /dev/null http://deb.debian.org/debian/
+      register: docker_egress_blocked
+      changed_when: false
+      failed_when: docker_egress_blocked.rc == 0
+
+    - name: Put the drop-in back
+      ansible.builtin.copy:
+        src: /root/60-docker.nft
+        dest: /etc/nftables.d/60-docker.nft
+        remote_src: true
+        mode: "0644"
+
+    - name: Load the firewall with the drop-in
+      ansible.builtin.systemd_service:
+        name: nftables.service
+        state: restarted
+
+    - name: Wait for Docker after the restart that nftables.service propagated
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 8080
+        timeout: 30
+
+    - name: Read the start time of Docker again
+      ansible.builtin.systemd_service:
+        name: docker.service
+      register: docker_started_after
+
+    - name: Read the loaded ruleset
+      ansible.builtin.command:
+        cmd: nft list ruleset
+      register: docker_ruleset
+      changed_when: false
+
+    - name: With the drop-in, a container reaches the outside
+      ansible.builtin.command:
+        cmd: docker exec molecule-web wget -q -T 10 -O /dev/null http://deb.debian.org/debian/
+      changed_when: false
+
+    - name: The container still answers on 127.0.0.1:8080
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/hostname
+        return_content: true
+      register: docker_http_after
+
+    - name: Docker was restarted by nftables.service and added its rules again
+      ansible.builtin.assert:
+        that:
+          - >-
+            docker_started_after.status.ActiveEnterTimestampMonotonic | int
+            > docker_started_before.status.ActiveEnterTimestampMonotonic | int
+          - docker_ruleset.stdout is search('table inet filter')
+          - docker_ruleset.stdout is search('oifname "docker0" ct status dnat accept')
+          - docker_ruleset.stdout is search('table ip nat')
+          - docker_http_after.content == docker_http.content
+        quiet: true
+
+    - name: Remove the test container
+      ansible.builtin.command:
+        cmd: docker rm --force molecule-web
+      changed_when: true
+
+    # The role's checks run before any change; each case below must stop the role.
+    - name: The role refuses a host in docker_forbidden_groups
+      block:
+        - name: Apply the role to a host in a forbidden group
+          ansible.builtin.include_role:
+            name: docker
+          vars:
+            docker_forbidden_groups: "{{ group_names }}"
+        - name: This task must not be reached
+          ansible.builtin.fail:
+            msg: The role ran on a host in docker_forbidden_groups.
+      rescue:
+        - name: The failure came from the group check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is search('must not run Docker')
+            quiet: true
+
+    - name: The role refuses a public address for published ports
+      block:
+        - name: Apply the role with a documentation address (198.51.100.7)
+          ansible.builtin.include_role:
+            name: docker
+          vars:
+            docker_default_bind_ip: 198.51.100.7
+        - name: This task must not be reached
+          ansible.builtin.fail:
+            msg: The role accepted a public address.
+      rescue:
+        - name: The failure came from the address check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is search('loopback or private address')
+            quiet: true

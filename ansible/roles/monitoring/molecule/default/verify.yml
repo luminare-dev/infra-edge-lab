@@ -1,0 +1,259 @@
+# Checks of the monitoring role: node_exporter (version, listen address, metrics, textfile
+# collector, sandbox), the firewall drop-in, the Uptime Kuma container (pinned image, published
+# on 127.0.0.1 only, answering), the monitor checklist and the refusals of the role's checks.
+- name: Verify
+  hosts: all
+  gather_facts: true
+  vars:
+    monitoring_private: "{{ 'debian' in group_names }}"
+    monitoring_listen: >-
+      {{ ansible_facts['default_ipv4']['address'] if monitoring_private else '127.0.0.1' }}
+  tasks:
+    - name: Read the node_exporter version
+      ansible.builtin.command:
+        cmd: /usr/local/bin/node_exporter --version
+      register: monitoring_version
+      changed_when: false
+
+    - name: The pinned node_exporter is installed
+      ansible.builtin.assert:
+        that:
+          - monitoring_version.stdout is search('node_exporter, version 1[.]12[.]1 ')
+        quiet: true
+
+    - name: Read the node_exporter service settings
+      ansible.builtin.systemd_service:
+        name: node_exporter.service
+      register: monitoring_unit
+
+    - name: Node_exporter runs enabled, unprivileged and sandboxed
+      ansible.builtin.assert:
+        that:
+          - monitoring_unit.status.ActiveState == 'active'
+          - monitoring_unit.status.UnitFileState == 'enabled'
+          - monitoring_unit.status.User == 'node_exporter'
+          - monitoring_unit.status.NoNewPrivileges == 'yes'
+          - monitoring_unit.status.ProtectSystem == 'strict'
+        quiet: true
+
+    - name: Wait for node_exporter
+      ansible.builtin.wait_for:
+        host: "{{ monitoring_listen }}"
+        port: 9100
+        timeout: 30
+
+    - name: List the listening TCP sockets
+      ansible.builtin.command:
+        cmd: ss -Htln
+      register: monitoring_listen_raw
+      changed_when: false
+
+    - name: Port 9100 listens on the configured address only (never 0.0.0.0 or [::])
+      vars:
+        monitoring_sockets: >-
+          {{ monitoring_listen_raw.stdout_lines | map('split') | map(attribute=3)
+             | select('match', '.*:9100$') | list }}
+      ansible.builtin.assert:
+        that:
+          - monitoring_sockets == [monitoring_listen ~ ':9100']
+        fail_msg: "Port 9100 listens on {{ monitoring_sockets }}"
+        quiet: true
+
+    - name: Write a metric for the textfile collector
+      ansible.builtin.copy:
+        dest: /var/lib/node_exporter/textfile/molecule.prom
+        content: |
+          # HELP molecule_textfile_check A metric written by the Molecule verify step.
+          # TYPE molecule_textfile_check gauge
+          molecule_textfile_check 1
+        mode: "0644"
+
+    - name: Read the metrics
+      ansible.builtin.uri:
+        url: "http://{{ monitoring_listen }}:9100/metrics"
+        return_content: true
+      register: monitoring_metrics
+
+    - name: The metrics show the build and the textfile metric
+      ansible.builtin.assert:
+        that:
+          - monitoring_metrics.content is search('node_exporter_build_info\{[^}]*version="1[.]12[.]1"')
+          - monitoring_metrics.content is search('(?m)^molecule_textfile_check 1$')
+          - monitoring_metrics.content is search('(?m)^node_textfile_scrape_error 0$')
+        quiet: true
+
+    - name: Look for the firewall drop-in
+      ansible.builtin.stat:
+        path: /etc/nftables.d/50-monitoring.nft
+      register: monitoring_dropin_stat
+
+    - name: Read the firewall drop-in
+      ansible.builtin.slurp:
+        src: /etc/nftables.d/50-monitoring.nft
+      register: monitoring_dropin
+      when: monitoring_dropin_stat.stat.exists
+
+    - name: The drop-in admits the sources to port 9100 (private address) or does not exist (loopback)
+      vars:
+        monitoring_rules: >-
+          {{ ((monitoring_dropin.content | b64decode).splitlines() | reject('match', '^(#.*)?$') | list)
+             if monitoring_dropin_stat.stat.exists else [] }}
+      ansible.builtin.assert:
+        that:
+          - >-
+            monitoring_rules == [
+              'add rule inet filter input ip saddr { 192.0.2.0/24 } tcp dport 9100 accept',
+              'add rule inet filter input ip6 saddr { 2001:db8::/32 } tcp dport 9100 accept'
+            ] if monitoring_private else not monitoring_dropin_stat.stat.exists
+        fail_msg: "Rules: {{ monitoring_rules }}"
+        quiet: true
+
+    - name: The ruleset with the drop-in passes nft --check
+      ansible.builtin.command:
+        cmd: nft --check --file /etc/nftables.conf
+      changed_when: false
+
+    - name: Read the Uptime Kuma container
+      ansible.builtin.command:
+        cmd: docker inspect uptime-kuma
+      register: monitoring_container_raw
+      changed_when: false
+
+    - name: Uptime Kuma runs from the pinned image with its port on 127.0.0.1 and its data volume
+      vars:
+        monitoring_container: "{{ (monitoring_container_raw.stdout | from_json)[0] }}"
+      ansible.builtin.assert:
+        that:
+          - monitoring_container.State.Running
+          - >-
+            monitoring_container.Config.Image
+            is search('@sha256:5db97dbbef610276e1699f3ece586c3509c8fd35de75d45ff5109761a1b377dc$')
+          - >-
+            monitoring_container.HostConfig.PortBindings['3001/tcp']
+            == [{'HostIp': '127.0.0.1', 'HostPort': '3001'}]
+          - monitoring_container.HostConfig.RestartPolicy.Name == 'unless-stopped'
+          - "'no-new-privileges:true' in monitoring_container.HostConfig.SecurityOpt"
+          - >-
+            monitoring_container.Mounts | selectattr('Name', 'defined')
+            | selectattr('Name', 'equalto', 'uptime-kuma-data')
+            | selectattr('Destination', 'equalto', '/app/data') | list | length == 1
+        quiet: true
+
+    - name: Wait for the Uptime Kuma web interface
+      ansible.builtin.uri:
+        url: http://127.0.0.1:3001/
+        follow_redirects: none
+        status_code: [200, 302]
+      register: monitoring_kuma
+      until: monitoring_kuma is succeeded
+      retries: 30
+      delay: 3
+
+    - name: List the listening TCP sockets again
+      ansible.builtin.command:
+        cmd: ss -Htln
+      register: monitoring_listen_kuma
+      changed_when: false
+
+    - name: Port 3001 listens on 127.0.0.1 only
+      vars:
+        monitoring_kuma_sockets: >-
+          {{ monitoring_listen_kuma.stdout_lines | map('split') | map(attribute=3)
+             | select('match', '.*:3001$') | list }}
+      ansible.builtin.assert:
+        that:
+          - monitoring_kuma_sockets == ['127.0.0.1:3001']
+        fail_msg: "Port 3001 listens on {{ monitoring_kuma_sockets }}"
+        quiet: true
+
+    - name: Read the monitor checklist
+      ansible.builtin.slurp:
+        src: /etc/uptime-kuma/monitors.md
+      register: monitoring_checklist
+
+    - name: The checklist lists every monitor and probe with its Uptime Kuma type
+      vars:
+        monitoring_checklist_text: "{{ monitoring_checklist.content | b64decode }}"
+      ansible.builtin.assert:
+        that:
+          - >-
+            '| 1 | Web site | HTTP(s) | https://lab-demo.example.com/ | status 200-302 | 60 s |  |'
+            in monitoring_checklist_text
+          - >-
+            '| 2 | Status page keyword | HTTP(s) - Keyword | https://lab-status.example.com/status/lab
+            (keyword: Operational) | status 200-299 | 120 s |  |' in monitoring_checklist_text
+          - >-
+            '| 3 | Game port | TCP Port | 192.0.2.13 port 30120 | reachable | 60 s | TCP only; UDP cannot be checked |'
+            in monitoring_checklist_text
+          - "'| 5 | Backup age | Push | push URL from Uptime Kuma (the job calls it) | a push every 93600 s | 93600 s |'
+            in monitoring_checklist_text"
+          - >-
+            '| 1 | Example site | HTTP(s) | https://www.example.com/ | status 200-299 | 300 s |  |'
+            in monitoring_checklist_text
+          - >-
+            '| 2 | Example mail submission | TCP Port | mail.example.com port 587 | reachable | 600 s |  |'
+            in monitoring_checklist_text
+          - monitoring_checklist_text is search('(?m)^## External probes$')
+        fail_msg: "{{ monitoring_checklist_text }}"
+        quiet: true
+
+    # The role's checks run before any change; each case below must stop the role.
+    - name: The role refuses a listen address on every interface
+      block:
+        - name: Apply the role with node_exporter on 0.0.0.0
+          ansible.builtin.include_role:
+            name: monitoring
+          vars:
+            monitoring_node_exporter_listen_address: 0.0.0.0
+        - name: This task must not be reached
+          ansible.builtin.fail:
+            msg: The role accepted 0.0.0.0.
+      rescue:
+        - name: The failure came from the address check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is search('must be a loopback or private address')
+            quiet: true
+
+    - name: The role refuses an external probe of an IP address
+      block:
+        - name: Apply the role with a probe of a documentation address
+          ansible.builtin.include_role:
+            name: monitoring
+          vars:
+            monitoring_external_probes:
+              - name: By address
+                type: port
+                host: 198.51.100.25
+                port: 25
+        - name: This task must not be reached
+          ansible.builtin.fail:
+            msg: The role accepted a probe of an IP address.
+      rescue:
+        # The check loops over the probes, so the message is in the failed item.
+        - name: The failure came from the probe check
+          ansible.builtin.assert:
+            that:
+              - >-
+                ansible_failed_result.results | default([]) | selectattr('failed', 'defined')
+                | selectattr('failed') | map(attribute='msg') | join(' ')
+                is search('must be a host name, never an IP address')
+            quiet: true
+
+    - name: The role refuses an Uptime Kuma image that is not pinned by digest
+      block:
+        - name: Apply the role with a tag only
+          ansible.builtin.include_role:
+            name: monitoring
+          vars:
+            monitoring_uptime_kuma_enabled: true
+            monitoring_uptime_kuma_image: louislam/uptime-kuma:2
+        - name: This task must not be reached
+          ansible.builtin.fail:
+            msg: The role accepted an image without a digest.
+      rescue:
+        - name: The failure came from the image check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is search('pinned by digest')
+            quiet: true

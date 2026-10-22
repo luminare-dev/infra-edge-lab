@@ -1,0 +1,23 @@
+# __docker_firewall_write (assert.yml): docker_firewall_manage is true or /etc/nftables.d exists;
+# /etc/nftables.conf and nft were checked there.
+- name: Create the nftables drop-in directory
+  ansible.builtin.file:
+    path: "{{ __docker_nft_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: docker_firewall_manage | bool
+
+# The candidate file is checked together with /etc/nftables.conf before it replaces the old one,
+# so a broken rule never reaches the drop-in directory.
+- name: Write the forward rules for Docker's networks (60-docker.nft)
+  ansible.builtin.template:
+    src: 60-docker.nft.j2
+    dest: "{{ __docker_nft_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /bin/bash -c 'set -o pipefail; cat /etc/nftables.conf %s | nft --check --file /dev/stdin'
+  when: __docker_firewall_write | bool
+  notify: Reload nftables

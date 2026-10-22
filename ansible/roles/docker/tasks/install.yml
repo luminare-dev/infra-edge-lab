@@ -1,0 +1,104 @@
+- name: Install the packages that the repository and the Docker modules need
+  ansible.builtin.apt:
+    name: "{{ __docker_support_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the APT keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Docker's repository signing key (checked against docker_apt_key_checksum)
+  ansible.builtin.get_url:
+    url: "{{ docker_apt_repository_url }}/{{ __docker_distribution }}/gpg"
+    dest: "{{ __docker_keyring }}"
+    checksum: "{{ docker_apt_key_checksum }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Add Docker's APT repository
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: deb
+    uris: "{{ docker_apt_repository_url }}/{{ __docker_distribution }}"
+    suites: "{{ ansible_facts['distribution_release'] }}"
+    components: stable
+    architectures: "{{ __docker_apt_arch }}"
+    signed_by: "{{ __docker_keyring }}"
+    state: present
+  register: __docker_repository
+
+# daemon.json and the service drop-in are in place before the package starts Docker for the first
+# time, so Docker never runs with its built-in default address (0.0.0.0) for published ports.
+- name: Create /etc/docker
+  ansible.builtin.file:
+    path: /etc/docker
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write /etc/docker/daemon.json
+  ansible.builtin.copy:
+    content: "{{ __docker_daemon_config | to_nice_json }}\n"
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart docker
+
+- name: Create the docker.service drop-in directory
+  ansible.builtin.file:
+    path: "{{ __docker_service_dropin | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: docker_restart_with_nftables | bool
+
+- name: Restart Docker together with nftables.service (docker.service drop-in)
+  ansible.builtin.template:
+    src: 10-nftables.conf.j2
+    dest: "{{ __docker_service_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: docker_restart_with_nftables | bool
+  notify: Reload systemd
+
+- name: Remove the docker.service drop-in when docker_restart_with_nftables is false
+  ansible.builtin.file:
+    path: "{{ __docker_service_dropin }}"
+    state: absent
+  when: not docker_restart_with_nftables | bool
+  notify: Reload systemd
+
+# On the first run the package scripts reload systemd before they start Docker, so the drop-in
+# above applies from the first start; later changes reload systemd through the handler.
+# The cache is refreshed when the repository was added or changed, and as long as docker-ce is
+# not installed (a first run that stopped after adding the repository).
+- name: Install Docker Engine
+  ansible.builtin.apt:
+    name: "{{ docker_packages }}"
+    state: present
+    update_cache: "{{ __docker_repository is changed or 'docker-ce' not in ansible_facts['packages'] }}"
+
+- name: Check /etc/docker/daemon.json with dockerd
+  ansible.builtin.command:
+    cmd: dockerd --validate --config-file /etc/docker/daemon.json
+  changed_when: false
+
+- name: Enable and start containerd and Docker
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - containerd.service
+    - docker.service

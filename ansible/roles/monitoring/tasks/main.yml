@@ -1,0 +1,14 @@
+# node_exporter on every host, Uptime Kuma (optional) on a host that watches the others.
+- name: Check the host and the settings before any change
+  ansible.builtin.import_tasks: assert.yml
+
+- name: Install and run node_exporter
+  ansible.builtin.import_tasks: node_exporter.yml
+  when: monitoring_node_exporter_enabled | bool
+
+- name: Open the node_exporter port for the allowed sources
+  ansible.builtin.import_tasks: firewall.yml
+
+- name: Run Uptime Kuma and write the monitor checklist
+  ansible.builtin.import_tasks: uptime_kuma.yml
+  when: monitoring_uptime_kuma_enabled | bool

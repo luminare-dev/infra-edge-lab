@@ -1,0 +1,83 @@
+- name: Gather the facts the role needs
+  ansible.builtin.setup:
+    gather_subset:
+      - min
+  when: ansible_facts['distribution'] is not defined
+
+- name: Check the platform (Debian 13 or Ubuntu 24.04)
+  ansible.builtin.assert:
+    that:
+      - >-
+        (ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == '13')
+        or (ansible_facts['distribution'] == 'Ubuntu' and ansible_facts['distribution_version'] == '24.04')
+    fail_msg: >-
+      The deploy_target role supports Debian 13 and Ubuntu 24.04; this host is
+      {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}.
+      Nothing was changed.
+    quiet: true
+
+- name: Check the settings
+  ansible.builtin.assert:
+    that:
+      - deploy_target_script_src | length > 0
+      - deploy_target_user is match('^[a-z_][a-z0-9_-]*$')
+      - deploy_target_user not in ['root', deploy_target_run_user]
+      - deploy_target_run_user is match('^[a-z_][a-z0-9_-]*$')
+      - deploy_target_run_group is match('^[a-z_][a-z0-9_-]*$')
+      - deploy_target_ssh_groups | reject('match', '^[a-z_][a-z0-9_-]*$') | list | length == 0
+      - deploy_target_ssh_groups | intersect(['root', 'sudo', 'admin', 'wheel', 'adm', 'docker']) | length == 0
+      - >-
+        ([deploy_target_spool_dir, deploy_target_release_root, deploy_target_script_dest,
+          deploy_target_rrsync_path] + deploy_target_read_write_paths)
+        | reject('match', __deploy_target_path_re) | list | length == 0
+      - deploy_target_spool_dir.rstrip('/') != deploy_target_release_root.rstrip('/')
+      - "'-wo' in deploy_target_rrsync_options"
+      - deploy_target_rrsync_options | difference(__deploy_target_allowed_rrsync_options) | length == 0
+      - deploy_target_unit_name is match('^[a-z0-9][a-z0-9_.-]*$')
+      - deploy_target_keep_versions | int >= 1
+    fail_msg: >-
+      Invalid setting: deploy_target_script_src must name the deploy script on the control node;
+      the user, run user, run group and SSH groups must be plain names (the upload account neither
+      root nor the run user, its groups no admin groups); the paths absolute without spaces, with
+      the spool directory apart from the release root; the rrsync options a subset of
+      {{ __deploy_target_allowed_rrsync_options | join(' ') }} that includes -wo; the unit name a
+      plain name; deploy_target_keep_versions at least 1. Nothing was changed.
+    quiet: true
+
+- name: Check each upload key
+  ansible.builtin.assert:
+    that:
+      - item.key is match(__deploy_target_key_re)
+      - item.comment is match('^[A-Za-z0-9._:+-]+$')
+      - item.from | default([]) | reject('match', '^[^",\s]+$') | list | length == 0
+    fail_msg: >-
+      deploy_target_authorized_keys: key must be "<type> <base64>" without options or comment
+      (types ssh-ed25519, ecdsa-sha2-nistp256/384/521, ssh-rsa), comment one word, and each from
+      pattern without quotes, commas or spaces. Nothing was changed.
+    quiet: true
+  loop: "{{ deploy_target_authorized_keys }}"
+  loop_control:
+    label: "{{ item.comment | default('') }}"
+
+- name: Look up the run user and group (the game server role creates them)
+  ansible.builtin.getent:
+    database: "{{ item.database }}"
+    key: "{{ item.key }}"
+    fail_key: false
+  loop:
+    - database: passwd
+      key: "{{ deploy_target_run_user }}"
+    - database: group
+      key: "{{ deploy_target_run_group }}"
+
+# getent with fail_key: false returns null for a name that does not exist.
+- name: Require the run user and group
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['getent_passwd'][deploy_target_run_user] is not none
+      - ansible_facts['getent_group'][deploy_target_run_group] is not none
+    fail_msg: >-
+      The deploy service runs as {{ deploy_target_run_user }}:{{ deploy_target_run_group }}, but
+      that user or group does not exist. Apply the game server role (luminare.gameserver.fxserver)
+      first, or set deploy_target_run_user and deploy_target_run_group. Nothing was changed.
+    quiet: true

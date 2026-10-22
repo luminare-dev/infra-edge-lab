@@ -1,0 +1,8 @@
+# Molecule scenario of the monitoring role. The driver, both platforms (Debian 13 and Ubuntu
+# 24.04) and the test sequence come from .config/molecule/config.yml; run it with
+#   cd ansible/roles/monitoring && export MOLECULE_ROLE=monitoring && molecule test
+# converge.yml applies the docker role first (Uptime Kuma runs in Docker inside the instance).
+# On Debian node_exporter listens on the instance's private address with firewall sources, on
+# Ubuntu on the default loopback address.
+scenario:
+  name: default

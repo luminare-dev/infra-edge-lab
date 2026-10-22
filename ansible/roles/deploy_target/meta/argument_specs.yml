@@ -1,0 +1,120 @@
+argument_specs:
+  main:
+    short_description: An upload-only SSH account and a path unit that runs a deploy script
+    description:
+      - Creates an account whose SSH keys can only run rrsync, write-only, into one spool directory
+        (restrict plus a forced command in authorized_keys).
+      - Installs a deploy script and a systemd path unit that starts it as the game server user when
+        an upload is marked complete by a *.ready file (PathExistsGlob).
+    options:
+      deploy_target_user:
+        type: str
+        default: deploy
+        description: >-
+          Upload account. Its login shell is /bin/sh (sshd runs the forced command through the
+          shell, so nologin would block it); it gets no sudo rights and no password.
+      deploy_target_ssh_groups:
+        type: list
+        elements: str
+        default:
+          - sshusers
+        description: >-
+          Groups for the upload account, created as system groups when missing. sshusers is the
+          AllowGroups group of the luminare.infra_edge base role, without which SSH refuses the
+          account.
+      deploy_target_authorized_keys:
+        type: list
+        elements: dict
+        default: []
+        description: >-
+          Public keys of the uploaders (for example a CI job). Each item has key (type and base64,
+          ssh-ed25519, ecdsa-sha2-nistp256/384/521 or ssh-rsa), comment and optionally from (list of
+          source address patterns for the from= option, for example 127.0.0.1 and ::1 when uploads
+          come through a tunnel on the host). Every key gets restrict and the forced rrsync command;
+          the file holds exactly these keys.
+        options:
+          key:
+            type: str
+            required: true
+          comment:
+            type: str
+            required: true
+          from:
+            type: list
+            elements: str
+            default: []
+      deploy_target_rrsync_path:
+        type: str
+        default: /usr/bin/rrsync
+        description: rrsync from the rsync package (the role checks that it exists).
+      deploy_target_rrsync_options:
+        type: list
+        elements: str
+        default:
+          - -wo
+          - -no-del
+        description: >-
+          rrsync options of the forced command; -wo (write only) is required. Allowed: -wo, -no-del
+          (no deletions), -no-lock, -no-overwrite, -munge (rsync --munge-links).
+      deploy_target_spool_dir:
+        type: str
+        default: /srv/luminare/incoming
+        description: >-
+          Spool directory, the only place the upload keys can write to. Owner deploy_target_user,
+          group deploy_target_run_group, mode 2770 (new files inherit the group).
+      deploy_target_run_user:
+        type: str
+        default: fxserver
+        description: >-
+          User of the deploy service (the game server user). It must exist; the role does not
+          create it.
+      deploy_target_run_group:
+        type: str
+        default: fxserver
+        description: Group of the deploy service and of the spool directory.
+      deploy_target_release_root:
+        type: str
+        default: /opt/fxserver/releases
+        description: >-
+          Directory for unpacked releases, owned by deploy_target_run_user (mode 0750); passed to
+          the script as DEPLOY_RELEASE_ROOT.
+      deploy_target_script_src:
+        type: str
+        default: ""
+        description: >-
+          Deploy script on the control node, installed to deploy_target_script_dest (required; the
+          script itself is not part of this role). See the role README for the environment it gets
+          and what it must do with the files in the spool directory.
+      deploy_target_script_dest:
+        type: str
+        default: /usr/local/sbin/luminare-deploy
+        description: Path of the installed deploy script (root-owned, mode 0755).
+      deploy_target_unit_name:
+        type: str
+        default: luminare-deploy
+        description: Name of the systemd path and service units (the name plus .path and .service).
+      deploy_target_keep_versions:
+        type: int
+        default: 3
+        description: Releases to keep per resource; passed to the script as DEPLOY_KEEP_VERSIONS.
+      deploy_target_reload_hook:
+        type: bool
+        default: false
+        description: >-
+          Whether the script may call a reload hook after a deploy (staging only); passed as
+          DEPLOY_RELOAD_HOOK (1 or 0).
+      deploy_target_read_write_paths:
+        type: list
+        elements: str
+        default: []
+        description: >-
+          More paths the sandboxed service may write to (absolute), for example the resources
+          folder where the script links a release. The spool directory and the release root are
+          always writable.
+      deploy_target_packages:
+        type: list
+        elements: str
+        default:
+          - rsync
+          - unzip
+        description: Packages for uploads (rsync with rrsync) and for the deploy script (unzip).

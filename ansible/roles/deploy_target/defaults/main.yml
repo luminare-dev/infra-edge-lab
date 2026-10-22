@@ -1,0 +1,27 @@
+# Defaults of the deploy_target role. Every variable is described, with its type, in
+# meta/argument_specs.yml; the tables in README.md and docs/configuration.md are generated from it.
+
+# Upload account: SSH keys that can only write into the spool directory through rrsync
+deploy_target_user: deploy
+deploy_target_ssh_groups:
+  - sshusers
+deploy_target_authorized_keys: []
+deploy_target_rrsync_path: /usr/bin/rrsync
+deploy_target_rrsync_options:
+  - -wo
+  - -no-del
+deploy_target_spool_dir: /srv/luminare/incoming
+
+# Deploy service: started by a path unit when a *.ready marker appears, runs as the game server user
+deploy_target_run_user: fxserver
+deploy_target_run_group: fxserver
+deploy_target_release_root: /opt/fxserver/releases
+deploy_target_script_src: ""
+deploy_target_script_dest: /usr/local/sbin/luminare-deploy
+deploy_target_unit_name: luminare-deploy
+deploy_target_keep_versions: 3
+deploy_target_reload_hook: false
+deploy_target_read_write_paths: []
+deploy_target_packages:
+  - rsync
+  - unzip

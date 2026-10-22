@@ -1,0 +1,39 @@
+# {{ ansible_managed }}
+# deploy_target: runs the deploy script as {{ deploy_target_run_user }} for the completed uploads in
+# {{ deploy_target_spool_dir }}. The script must delete each processed *.ready marker (with its
+# files), or the path unit starts it again.
+[Unit]
+Description=Deploy the completed uploads in {{ deploy_target_spool_dir }}
+ConditionPathIsDirectory={{ deploy_target_spool_dir }}
+
+[Service]
+Type=oneshot
+User={{ deploy_target_run_user }}
+Group={{ deploy_target_run_group }}
+UMask=0027
+Environment=DEPLOY_SPOOL_DIR={{ deploy_target_spool_dir }}
+Environment=DEPLOY_RELEASE_ROOT={{ deploy_target_release_root }}
+Environment=DEPLOY_KEEP_VERSIONS={{ deploy_target_keep_versions }}
+Environment=DEPLOY_RELOAD_HOOK={{ '1' if deploy_target_reload_hook | bool else '0' }}
+ExecStart={{ deploy_target_script_dest }}
+TimeoutStartSec=10min
+SyslogIdentifier={{ deploy_target_unit_name }}
+
+# The script handles files that an upload key wrote: it gets no privileges and may write to the
+# spool directory, the release root and deploy_target_read_write_paths only.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths={{ ([deploy_target_spool_dir, deploy_target_release_root] + deploy_target_read_write_paths) | join(' ') }}

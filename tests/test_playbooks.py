@@ -209,6 +209,39 @@ class LocalInventoryTest(unittest.TestCase):
 
 
 @unittest.skipIf(yaml is None, "PyYAML is not installed (pip install -r requirements-test.txt)")
+class DemoInventoryTest(unittest.TestCase):
+    """The values of the demo environment: no secret, nothing open beyond the host itself."""
+
+    DEMO_VARS = ROOT / "ansible" / "inventories" / "demo" / "group_vars"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.vars = {}
+        for path in sorted(cls.DEMO_VARS.glob("*.yml")):
+            cls.vars.update(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+    def test_every_secret_is_generated(self):
+        secrets = {k: v for k, v in self.vars.items() if LocalInventoryTest.SECRET_NAME_RE.search(k)}
+        self.assertEqual(sorted(secrets), ["restic_backup_password"])
+        for name, value in secrets.items():
+            with self.subTest(variable=name):
+                self.assertIn("ansible.builtin.password", value)
+                self.assertIn("demo_generated_dir ~ '/", value)
+        self.assertEqual(self.vars["demo_generated_dir"], "{{ inventory_dir }}/.generated")
+
+    def test_keys_come_from_the_environment_of_the_run(self):
+        self.assertIn("lookup('ansible.builtin.env', 'TF_VAR_ssh_public_key')", self.vars["base_admin_ssh_keys"])
+        self.assertEqual(self.vars["base_automation_ssh_keys"], "{{ base_admin_ssh_keys }}")
+
+    def test_only_the_tunnel_reaches_the_host(self):
+        self.assertEqual(self.vars["base_ssh_allow_mode"], "loopback")
+        self.assertEqual(self.vars["monitoring_node_exporter_listen_address"], "127.0.0.1")
+        self.assertEqual(self.vars["mariadb_bind_address"], "127.0.0.1")
+        self.assertNotIn("cloudflared_token", self.vars)
+        self.assertNotIn("nginx_sites", self.vars, "the test page site belongs to the tunnel test only")
+
+
+@unittest.skipIf(yaml is None, "PyYAML is not installed (pip install -r requirements-test.txt)")
 class RestoreTestPlaybookTest(unittest.TestCase):
     """playbooks/restore_test.yml: task restore-test and the last step of task e2e:local."""
 
@@ -250,11 +283,24 @@ class SmokeAndPrepareTest(unittest.TestCase):
                 self.assertIn(needle, smoke)
         self.assertNotIn("players.json", smoke)
 
-    def test_local_prepare_writes_the_dns_drop_in_before_any_firewall_load(self):
-        prepare = read("ansible/playbooks/local_prepare.yml")
-        self.assertIn("/etc/nftables.d/05-local-container-dns.nft", prepare)
-        self.assertIn("table ip local_container_dns", prepare)
-        self.assertNotIn("table inet filter", prepare.split("table ip local_container_dns")[1].split("- name:")[0])
+    def test_container_dns_writes_the_drop_in_before_any_firewall_load(self):
+        dns = read("ansible/playbooks/container_dns.yml")
+        self.assertIn("/etc/nftables.d/05-local-container-dns.nft", dns)
+        self.assertIn("table ip local_container_dns", dns)
+        self.assertNotIn("table inet filter", dns.split("table ip local_container_dns")[1].split("- name:")[0])
+
+    def test_both_container_environments_import_the_dns_play_before_site_yml(self):
+        """local_prepare.yml and tunnel_e2e_prepare.yml run before site.yml (the base firewall)."""
+        for rel in ("ansible/playbooks/local_prepare.yml", "ansible/playbooks/tunnel_e2e_prepare.yml"):
+            with self.subTest(playbook=rel):
+                self.assertIn("ansible.builtin.import_playbook: container_dns.yml\n", read(rel))
+        self.assertNotIn("container_dns", read("ansible/playbooks/site.yml"))
+
+    def test_tunnel_test_page_listens_on_loopback_only(self):
+        prepare = read("ansible/playbooks/tunnel_e2e_prepare.yml")
+        self.assertIn("http.server 8000 --bind 127.0.0.1", prepare)
+        self.assertIn("DynamicUser=true", prepare)
+        self.assertIn("tunnel_e2e_marker is match(", prepare)
 
 
 @unittest.skipIf(yaml is None, "PyYAML is not installed (pip install -r requirements-test.txt)")
@@ -295,6 +341,19 @@ class TaskfileTest(unittest.TestCase):
                 self.assertIn("enum: [local, lab, demo, showcase]", block.group(1))
         self.assertRegex(taskfile, r"\n  e2e:local:\n    desc: ")
         self.assertRegex(taskfile, r"\n  collections:\n    desc: ")
+
+    def test_cloudflare_targets(self):
+        taskfile = read("Taskfile.yml")
+        for task, command in (("preflight", "bash scripts/cf_preflight.sh {{.ENV}}"),
+                              ("dns-backup", "bash scripts/dns_backup.sh {{.ENV}}"),
+                              ("sweep:demo", "bash scripts/sweep_demo.sh {{.CLI_ARGS}}"),
+                              ("e2e:tunnel", 'PATH="{{.VENV_BIN}}:$PATH" bash scripts/e2e_tunnel.sh')):
+            with self.subTest(task=task):
+                block = re.search(rf"(?s)\n  {re.escape(task)}:\n(.*?)(?=\n  [\w:-]+:\n|\Z)", taskfile)
+                self.assertIsNotNone(block)
+                self.assertIn(f"- {command}\n", block.group(1) + "\n")
+                if "{{.ENV}}" in command:
+                    self.assertIn("enum: [lab, demo, showcase]", block.group(1))
 
 
 if __name__ == "__main__":

@@ -71,14 +71,38 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(children["fxserver"], {"hosts": {"fx-01": {}}})
         self.assertEqual(children["docker_hosts"], {}, "an empty group is still defined")
 
-    def test_ssh_hosts_of_a_cloud_environment(self):
-        hosts = {"edge-01": {"ansible_host": "demo-ssh.example.com", "connection": "ansible.builtin.ssh",
-                             "groups": ["edge", "db"], "ip": "2001:db8::10"}}
-        inventory = self.render(hosts, env="demo")
-        self.assertEqual(inventory["all"]["hosts"]["edge-01"], {
-            "ansible_host": "demo-ssh.example.com", "ansible_connection": "ansible.builtin.ssh",
-            "host_ip": "2001:db8::10"})
-        self.assertIn("tofu/envs/demo", render_inventory.render(hosts, "demo"))
+    def test_ssh_hosts_of_a_cloud_environment_go_through_the_tunnel(self):
+        """A cloud server has no public SSH port: Ansible goes through <env>-ssh and Access."""
+        for env, name in (("demo", "demo-ssh.example.com"), ("showcase", "show-ssh.example.com")):
+            with self.subTest(env=env):
+                hosts = {"edge-01": {"ansible_host": name, "connection": "ansible.builtin.ssh",
+                                     "groups": ["edge", "db"], "ip": "2001:db8::10"}}
+                inventory = self.render(hosts, env=env)
+                host = inventory["all"]["hosts"]["edge-01"]
+                self.assertEqual(host["ansible_host"], name)
+                self.assertEqual(host["ansible_connection"], "ansible.builtin.ssh")
+                self.assertEqual(host["host_ip"], "2001:db8::10")
+                self.assertEqual(host["ansible_user"], "ansible")
+                args = host["ansible_ssh_common_args"]
+                self.assertIn('-o ProxyCommand="cloudflared access ssh --hostname %h"', args)
+                self.assertIn("-o StrictHostKeyChecking=accept-new", args)
+                self.assertIn("-o UserKnownHostsFile={{ inventory_dir }}/.generated/known_hosts", args)
+                # The service token comes from the environment of the run, never from the inventory.
+                self.assertNotIn("service-token", args)
+                self.assertNotIn("TUNNEL_SERVICE_TOKEN", render_inventory.render(hosts, env))
+                self.assertIn(f"tofu/envs/{env}", render_inventory.render(hosts, env))
+
+    def test_only_cloud_ssh_hosts_get_the_tunnel(self):
+        """Containers (also those of demo's tunnel test) and lab's machines connect directly."""
+        container = {"edge-01": {"ansible_host": "lab-demo-edge-01", "connection": "community.docker.docker",
+                                 "groups": ["edge", "db"], "ip": "192.0.2.10"}}
+        lab = {"edge-01": {"ansible_host": "192.0.2.11", "connection": "ansible.builtin.ssh",
+                           "groups": ["edge"], "ip": "192.0.2.11"}}
+        for hosts, env in ((container, "demo"), (lab, "lab"), (LOCAL_HOSTS, "local")):
+            with self.subTest(env=env):
+                for host in self.render(hosts, env=env)["all"]["hosts"].values():
+                    self.assertNotIn("ansible_ssh_common_args", host)
+                    self.assertNotIn("ansible_user", host)
 
     def test_output_is_stable(self):
         shuffled = dict(reversed(list(LOCAL_HOSTS.items())))

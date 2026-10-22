@@ -18,6 +18,15 @@ Each host gets these variables:
     ansible_connection  the connection plugin (community.docker.docker or ansible.builtin.ssh)
     host_ip             the host's address in the environment's network; group_vars use it for
                         listen addresses and firewall sources between the hosts
+An SSH host of demo or showcase (a cloud server, which has no public SSH port) is reached through
+the tunnel: it also gets
+    ansible_user             the automation user that cloud-init and the base role create
+    ansible_ssh_common_args  ProxyCommand "cloudflared access ssh --hostname %h", which carries
+                             the connection to the <env>-ssh hostname behind Access with the
+                             service token in TUNNEL_SERVICE_TOKEN_ID and
+                             TUNNEL_SERVICE_TOKEN_SECRET (scripts/environment.sh sets both for
+                             the playbook run), and the host key in .generated/known_hosts next
+                             to the inventory, accepted on the first connection
 Every group of the environments (edge, db, fxserver, monitoring, docker_hosts) is written, also
 when it is empty, so that a play or a group_vars expression can rely on groups['<name>'].
 
@@ -39,6 +48,19 @@ from typing import Any
 GROUPS = ("edge", "db", "fxserver", "monitoring", "docker_hosts")
 CONNECTIONS = ("community.docker.docker", "ansible.builtin.ssh")
 ENVS = ("local", "lab", "demo", "showcase")
+# Environments whose SSH hosts are cloud servers without a public SSH port: Ansible reaches them
+# through the tunnel and Access only (tofu/modules/hcloud_vm).
+TUNNEL_SSH_ENVS = ("demo", "showcase")
+# The automation user of the luminare.infra_edge base role, the user that cloud-init creates on a
+# cloud server (tofu/modules/hcloud_vm, admin_user).
+TUNNEL_SSH_USER = "ansible"
+# cloudflared from the control node's PATH reads the service token from its environment, never
+# from the command line. The host key of a new server is accepted once and kept next to the
+# inventory (the destroy of the environment removes the file).
+TUNNEL_SSH_ARGS = (
+    '-o ProxyCommand="cloudflared access ssh --hostname %h" -o StrictHostKeyChecking=accept-new '
+    "-o UserKnownHostsFile={{ inventory_dir }}/.generated/known_hosts"
+)
 # The host name rule of the OpenTofu modules (tofu/modules/*/variables.tf).
 HOST_RE = re.compile(r"^[a-z][a-z0-9-]{0,39}$")
 # A container name, an IP address or a DNS name: no spaces, quotes or shell characters.
@@ -105,6 +127,11 @@ def render(hosts: dict[str, Any], env: str) -> str:
             f"      ansible_connection: {scalar(host['connection'])}",
             f"      host_ip: {scalar(host['ip'])}",
         ]
+        if env in TUNNEL_SSH_ENVS and host["connection"] == "ansible.builtin.ssh":
+            lines += [
+                f"      ansible_user: {scalar(TUNNEL_SSH_USER)}",
+                f"      ansible_ssh_common_args: {scalar(TUNNEL_SSH_ARGS)}",
+            ]
     lines.append("  children:")
     for group in GROUPS:
         members = [name for name, host in checked.items() if group in host["groups"]]

@@ -29,10 +29,10 @@ rejects a request without a valid Access token for each web hostname behind Acce
 | `lab` | `lab-tx` (only with a host in the group `fxserver`) | port 40120 of that host | login |
 | `lab` | `lab-pve` | `https://<pve_ip>:8006` (self-signed, `no_tls_verify`) | login |
 | `lab` | `lab-pveapi` | `https://<pve_ip>:8006` | service token (CI) |
-| `demo` | `demo-web` | `http://localhost:80` | service token |
+| `demo` | `demo-web` | `http://127.0.0.1:8080` on the edge host | service token |
 | `demo` | `demo-ssh` | `ssh://localhost:22` | service token (SSH application) |
 | `demo` | `demo-tx` (only in the group `fxserver`) | `http://localhost:40120` | login |
-| `showcase` | `show-web` | `http://localhost:80` | public |
+| `showcase` | `show-web` | `http://127.0.0.1:8080` on the edge host | public |
 | `showcase` | `show-ssh` | `ssh://localhost:22` | service token (SSH application) |
 | `showcase` | `show-tx` (only in the group `fxserver`) | `http://localhost:40120` | login |
 | `showcase` | `show-status` (only with `status_origin`) | `status_origin` | login |
@@ -68,10 +68,16 @@ task test ENV=lab                                             # mocked guard tes
 - `task up ENV=<env>` runs init, apply, inventory, configure and smoke, `task destroy ENV=<env>`
   destroys, and `task rebuild ENV=<env>` does both in a row, each with the same passphrase as the
   init ([runbook](../../docs/runbook.md#procedure-rebuild-an-environment-from-nothing)).
-  `task destroy` and `task rebuild` refuse `showcase`. The `local`
-  environment needs a Docker daemon that allows privileged containers; it creates the containers
-  `lab-local-edge-01`, `lab-local-db-01` and `lab-local-fx-01` and the network `lab-local`, and
-  `task e2e:local` builds, checks and destroys it in one go.
+  `task destroy` and `task rebuild` refuse `showcase`. For `lab`, `demo` and `showcase`,
+  `task up` runs `task preflight` and `task dns-backup` before the apply and stops if either
+  fails ([ADR 0024](../../docs/adr/0024-a-tunnel-test-guarded-by-a-zone-preflight-a-comparison-and-a-sweeper.md)).
+  The `local` environment needs a Docker daemon that allows privileged containers; it creates the
+  containers `lab-local-edge-01`, `lab-local-db-01` and `lab-local-fx-01` and the network
+  `lab-local`, and `task e2e:local` builds, checks and destroys it in one go.
+- `task e2e:tunnel` plans and applies a copy of `demo` with `substrate = "docker"`,
+  `tunnel_name = "demo-e2e"` and `name_prefix = "lab-e2e-"` (container `lab-e2e-demo-edge-01`,
+  network `lab-e2e-demo`), with its state in its own work folder, and always destroys it again
+  ([runbook](../../docs/runbook.md#failure-the-tunnel-test-fails)).
 - Every plan of `lab`, `demo` and `showcase` shows the Cloudflare provider's warning "Resource
   Destruction Considerations" for the tunnel configuration: the provider has no delete call for
   it. The configuration is stored under its tunnel, and a destroy deletes the tunnel.

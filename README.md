@@ -36,7 +36,12 @@ one playbook that configures every environment with the roles of the `luminare.i
 (`docker`, `monitoring`, `deploy_target`); and `task e2e:local`, which rebuilds the `local`
 environment from nothing with one command on every pull request: three hosts with a web server,
 a database, a game server (a stand-in build) and their monitoring, configured twice without a
-change on the second run, smoke-tested, backed up and restore-tested, and thrown away again.
+change on the second run, smoke-tested, backed up and restore-tested, and thrown away again. For
+the cloud environments it adds workflows that plan on pull requests, apply only after a review
+and look for drift every night,
+and `task e2e:tunnel`, which publishes a throw-away container through a real tunnel behind Access
+and checks it from outside; the workflows stay off until the owner turns them on, and the tunnel
+test needs a Cloudflare account.
 
 ## Quickstart
 
@@ -89,6 +94,25 @@ endpoints, the secrets are generated per run, and there is no tunnel. The roles 
 `ansible/roles` are also tested one by one with Molecule on Debian 13 and Ubuntu 24.04, in
 systemd containers built from the same image.
 
+The cloud environments get four workflows that stay off until the repository variable
+`CLOUD_ENVS_ENABLED` is `true`
+([ADR 0023](docs/adr/0023-gated-cloud-workflows-with-read-only-plans-and-reviewed-applies.md)):
+`plan` (a read-only plan of `lab`, `demo` and `showcase` on pull requests that change `tofu/`,
+never for forks), `apply` (`demo` or `showcase` on demand, after the owner's approval in a
+protected GitHub environment), `drift` (a nightly read-only plan that opens an issue on a change,
+a forgotten demo server or left-over `demo-*` objects) and `e2e-tunnel`. Logs of a public
+repository are public, so no plan reaches a log: only a summary by resource
+(`scripts/plan_summary.py`). Every apply into the shared zone is guarded
+([ADR 0024](docs/adr/0024-a-tunnel-test-guarded-by-a-zone-preflight-a-comparison-and-a-sweeper.md)):
+`task preflight` prints the token permissions and refuses when the plan would touch a record
+outside the environment's prefix or one that this repository did not create, `task dns-backup`
+keeps an age-encrypted copy of the zone (both run in `task up`), and the records outside the
+environment are compared before and after. `task e2e:tunnel` runs the `demo` environment with its
+host as a container: a real tunnel `demo-e2e` with `demo-web` and `demo-ssh` behind Access,
+`site.yml` on the container, the test page through Access with a service token (and a refusal
+without it), Ansible over SSH through `demo-ssh`, and always destroy, `task sweep:demo` for what
+the run created and the zone comparison.
+
 ```mermaid
 flowchart LR
     operator(["Operator"]) -->|"task up, task rebuild ENV=env"| tasks["Taskfile.yml, scripts/environment.sh"]
@@ -108,6 +132,8 @@ flowchart LR
     site --> hosts[("edge-01, db-01, fx-01")]
     modules -.->|"local: docker_host"| hosts
     ci --> checks["Unit tests, ansible-lint, tofu test with mocked providers, Molecule per role"]
+    gated["Gated: plan, apply, drift, e2e-tunnel"] -.->|"CLOUD_ENVS_ENABLED"| tasks
+    tasks -->|"preflight, dns-backup, sweep:demo"| zone[("Cloudflare zone, tunnel, Access")]
 ```
 
 | Folder | Holds at this version |
@@ -115,10 +141,10 @@ flowchart LR
 | `tofu/modules/` | Five OpenTofu modules, each with mocked tests and a lock file: `pve_vm` (Proxmox VE virtual machine), `hcloud_vm` (Hetzner Cloud server with firewall), `cf_tunnel` (tunnel, ingress rules and DNS records behind the shared-zone guard), `cf_access_app` (Access applications and service tokens) and `docker_host` (containers with systemd standing in for virtual machines). Each module has a README. |
 | `tofu/envs/` | Four environments, each a root module with its own encrypted state, lock file and guard tests ([tofu/envs/README.md](tofu/envs/README.md)): `local` (`edge-01`, `db-01` and `fx-01` as containers on the local Docker daemon, no account), `lab` (Proxmox VE), `demo` (one throw-away cloud server or container) and `showcase` (a protected long-lived server, skeleton only). |
 | `images/` | `systemd-host/Dockerfile`: the host image of `docker_host` and of the Molecule scenarios (Debian 13 or Ubuntu 24.04, base images pinned by digest). |
-| `ansible/` | `ansible.cfg`; `requirements.yml` (the luminare collections at git tags, `prometheus.prometheus` and the community collections at exact versions); `playbooks/site.yml` (every environment), `playbooks/smoke.yml` (the smoke test) and `playbooks/local_prepare.yml` (the stand-ins of the local environment); `inventories/local/group_vars/` (the values of the local environment; `hosts.yml` is generated); and the roles kept in this repository, each with a README and a Molecule scenario: [docker](ansible/roles/docker/README.md) (Docker Engine with published ports on loopback), [monitoring](ansible/roles/monitoring/README.md) (node_exporter, Uptime Kuma and its monitor checklist) and [deploy_target](ansible/roles/deploy_target/README.md) (an upload-only deploy key and a path unit). |
+| `ansible/` | `ansible.cfg`; `requirements.yml` (the luminare collections at git tags, `prometheus.prometheus` and the community collections at exact versions); `playbooks/site.yml` (every environment), `playbooks/smoke.yml` (the smoke test), `playbooks/local_prepare.yml` (the stand-ins of the local environment), `playbooks/container_dns.yml` (name resolution in containers under the base firewall) and `playbooks/tunnel_e2e_prepare.yml` (the test page of `task e2e:tunnel`); `inventories/local/group_vars/` and `inventories/demo/group_vars/` (the values of both environments; `hosts.yml` is generated); and the roles kept in this repository, each with a README and a Molecule scenario: [docker](ansible/roles/docker/README.md) (Docker Engine with published ports on loopback), [monitoring](ansible/roles/monitoring/README.md) (node_exporter, Uptime Kuma and its monitor checklist) and [deploy_target](ansible/roles/deploy_target/README.md) (an upload-only deploy key and a path unit). |
 | `.config/molecule/` | The Molecule configuration that every role scenario shares (driver, both platforms, test sequence). |
 | `secrets/` | The rules for SOPS-encrypted dotenv files and an example of their keys; no encrypted file. |
-| `scripts/` | The repository checks from the template; `run_tests.sh` (the test command of CI); `check_tofu.sh` (the OpenTofu checks), `tofu_env.sh` (OpenTofu in one environment) and `install_tofu_tools.sh` (sha256-checked downloads of OpenTofu, TFLint and Terraform); `render_inventory.py` (the inventory from the OpenTofu outputs), `environment.sh` (up, inventory, configure, smoke, destroy and rebuild), `tunnel_token.py` (the tunnel token for one configure run) and `e2e_local.sh` (`task e2e:local`). |
+| `scripts/` | The repository checks from the template; `run_tests.sh` (the test command of CI); `check_tofu.sh` (the OpenTofu checks), `tofu_env.sh` (OpenTofu in one environment) and `install_tofu_tools.sh` (sha256-checked downloads of OpenTofu, TFLint and Terraform); `render_inventory.py` (the inventory from the OpenTofu outputs), `environment.sh` (up, inventory, configure, smoke, destroy and rebuild), `tunnel_token.py` (the tunnel token for one configure run) and `e2e_local.sh` (`task e2e:local`); `cloudflare_api.py` (the zone checks, copy, comparison and the sweeper) with `cf_preflight.sh`, `dns_backup.sh` and `sweep_demo.sh`; `plan_summary.py` (a plan by resource), `cloud_ci.sh` (the cloud workflows) and `e2e_tunnel.sh` (`task e2e:tunnel`). |
 | `tests/` | Unit tests for the checks, the scripts and this repository's conventions; `role_docs.py`, which generates the variable tables of the roles; and `fake-artifact/`, the stand-in game server build of the local environment ([README](tests/fake-artifact/README.md)). |
 | `docs/` | Installation, configuration, toolchain, runbook, troubleshooting and the ADRs. |
 
@@ -148,6 +174,8 @@ The decisions behind this project are recorded as short ADRs in [docs/adr/](docs
 - [ADR 0020: An upload-only deploy key and a path unit, instead of a deploy command over SSH or a pull model](docs/adr/0020-upload-only-deploy-key-and-a-path-unit.md)
 - [ADR 0021: One site playbook for every environment, with the inventory from the OpenTofu outputs, instead of a playbook per environment or a dynamic inventory](docs/adr/0021-one-site-playbook-with-the-inventory-from-the-opentofu-outputs.md)
 - [ADR 0022: An end-to-end run of the local environment on every pull request, instead of a scheduled cloud run or one Molecule scenario for all hosts](docs/adr/0022-an-end-to-end-run-of-the-local-environment-on-every-pull-request.md)
+- [ADR 0023: Gated cloud workflows with read-only plans and reviewed applies, instead of no cloud CI or repository secrets on every pull request](docs/adr/0023-gated-cloud-workflows-with-read-only-plans-and-reviewed-applies.md)
+- [ADR 0024: A tunnel test guarded by a zone preflight, a comparison and a sweeper, instead of a cloud server or mocks only](docs/adr/0024-a-tunnel-test-guarded-by-a-zone-preflight-a-comparison-and-a-sweeper.md)
 
 ## Supported versions
 
@@ -164,6 +192,7 @@ The decisions behind this project are recorded as short ADRs in [docs/adr/](docs
 | Uptime Kuma (`monitoring`) | 2.5.6, `slim` image | the image pinned by digest |
 | Docker Engine installed by the `docker` role | 29.9.2, the newest release of Docker's `stable` channel on 2026-10-21 (Debian 13 and Ubuntu 24.04) | the current release of Docker's `stable` channel |
 | go-task | 3.54.0 | 3.54.0 |
+| cloudflared on the control node (`task e2e:tunnel`) | 2026.10.2: `--version` and the flags of `access ssh --help` only | 2026.10.2, the pinned version and sha256 |
 | OpenTofu | 1.13.1 | 1.13.1 (modules and environments declare `required_version = ">= 1.11.0"`; older versions are not tested) |
 | Terraform | 1.16.6, `terraform validate` only | validation only; plans and applies use OpenTofu |
 | OpenTofu providers | the versions locked in each `.terraform.lock.hcl` and the lowest version of each range ([docs/toolchain.md](docs/toolchain.md)) | the version ranges in each `versions.tf` |
@@ -176,11 +205,29 @@ Fixes go into the latest minor release only. See the
 
 ## Limitations
 
-- Only the `local` environment has its inventory values (`ansible/inventories/local/group_vars/`)
-  at this version. `lab`, `demo` and `showcase` need theirs, with their secrets in `*.sops.yaml`
-  files, before `task configure` can run there; `demo` and `showcase` also need SSH through the
-  tunnel (`cloudflared access ssh`), which nothing sets up yet. `task up` does not export the
-  zone's DNS records before an apply; the [runbook](docs/runbook.md) lists it as a manual step.
+- `local` and `demo` have their inventory values at this version
+  (`ansible/inventories/<env>/group_vars/`); `lab` and `showcase` need theirs, with their secrets
+  in `*.sops.yaml` files, before `task configure` can run there. Ansible reaches a cloud server of
+  `demo` or `showcase` only over SSH through the tunnel: the inventory sends it through
+  `cloudflared access ssh` to `<env>-ssh`, and `task configure`, `task smoke` and the `apply`
+  workflow give it the service token of that hostname from the outputs and the private key of
+  `TF_VAR_ssh_public_key` (the operator's own, or `SSH_PRIVATE_KEY_B64` in the workflow). This
+  path is tested with stand-ins only; it has not reached a cloud server.
+- None of the cloud workflows (`plan`, `apply`, `drift`, `e2e-tunnel`) has run: no account, R2
+  bucket, SOPS file or GitHub environment exists for them, and they are skipped until the owner
+  sets `CLOUD_ENVS_ENABLED` ([runbook](docs/runbook.md#procedure-turn-on-the-cloud-workflows)).
+  `task e2e:tunnel` has not run either: no Cloudflare token with write permission was used for
+  this version. Its parts were tested here: the Cloudflare checks, the zone copy and the sweeper
+  against a stand-in for the API (field names, states and the export format follow Cloudflare's
+  API documentation and were not compared with real answers); the plan of the test against the
+  real providers without network access; and the host part on a Debian 13 container without the
+  tunnel connector, which needs a real token (see Results).
+- The sweeper recognises `demo` objects by their names and markers only. The tunnel test removes
+  only what was created since its start; `task sweep:demo` lists everything of `demo` that is left
+  and deletes it only with `--delete`, so it must not run while a demo is in use.
+- `task dns-backup` keeps the encrypted zone file on the workstation (`backups/dns/`): the backup
+  bucket of plan 09 does not exist yet, CI keeps no copy (the workflows compare the records before
+  and after instead), and a restore is a manual import ([runbook](docs/runbook.md)).
 - `ansible/requirements.yml` pins `luminare.infra_edge` and `luminare.gameserver` to the tag
   `v0.2.0` of their repositories. The end-to-end runs of this version used collections built
   from both repositories' development branches before those tags existed; the CI workflow
@@ -241,9 +288,11 @@ Fixes go into the latest minor release only. See the
 
 | What | Value | How it was measured |
 |---|---|---|
-| `task e2e:local`: the `local` environment rebuilt from nothing | 2 runs, both passed, 768 s and 767 s in all. Per step (first run / second run): `tofu init` 1.0 / 1.0 s; `tofu apply` 12.3 / 12.9 s (5 resources: `edge-01`, `db-01` and `fx-01` on Debian 13, their network and the host image from Docker's build cache); inventory 1.9 / 1.9 s; first playbook run (`local_prepare.yml` and `site.yml`) 463.6 / 461.6 s; second run 267.1 / 268.2 s with `changed=0` on all three hosts (136, 240 and 202 tasks ok); second `tofu plan` 5.2 / 5.2 s with no changes; smoke test 4.2 / 4.5 s (nginx 200 on loopback, MariaDB `SELECT 1`, `/info.json` with build 35245, all 10 Prometheus targets up: Prometheus, node_exporter of the three hosts across their firewalls, and six targets of the observability jobs); destroy 10.3 / 10.1 s, nothing left on the daemon. These two runs predate the restore test, now the last step before the destroy; it was not run at this commit | `task e2e:local` with the luminare collections built from the development branches of both repositories and installed through `ANSIBLE_COLLECTIONS_PATH` (the collection step then only lists them), `devsec.hardening` 11.0.0 and `prometheus.prometheus` 0.30.2 from Ansible Galaxy; OpenTofu 1.13.1, the tools of `requirements-test.txt`, Docker Engine 29.2.1, one run at a time, 2026-10-22 |
-| Unit tests | 268 run, 0 failed, 4 skipped (three need gitleaks or markdownlint-cli2, which CI's lint-test job does not install; one applies to the template repository only) | `bash scripts/run_tests.sh` in `python:3.12-slim` and `python:3.13-slim` with git added, 2026-10-22 |
-| ansible-lint | production profile passed: 0 failures, 0 warnings in 91 files (the three roles and their Molecule playbooks, the playbooks in `ansible/playbooks`, the `group_vars` of `local` and the other YAML files of the repository; the collections' roles mocked) | the last step of `bash scripts/run_tests.sh` (offline, collections from the `ansible` package only), ansible-lint 26.10.1, in the same two containers, 2026-10-22 |
+| `task e2e:local`: the `local` environment rebuilt from nothing | 3 runs passed: 768 s and 767 s, and 809 s after the DNS play moved into `playbooks/container_dns.yml` (first playbook run 494.3 s, second run 277.0 s with `changed=0` on all three hosts, plan 5.3 s without changes, smoke 4.4 s with all 10 Prometheus targets up, destroy 10.3 s); one attempt before that third run stopped in the first playbook run when the node_exporter download from GitHub timed out on `fx-01`. Per step of the first two runs (first run / second run): Per step (first run / second run): `tofu init` 1.0 / 1.0 s; `tofu apply` 12.3 / 12.9 s (5 resources: `edge-01`, `db-01` and `fx-01` on Debian 13, their network and the host image from Docker's build cache); inventory 1.9 / 1.9 s; first playbook run (`local_prepare.yml` and `site.yml`) 463.6 / 461.6 s; second run 267.1 / 268.2 s with `changed=0` on all three hosts (136, 240 and 202 tasks ok); second `tofu plan` 5.2 / 5.2 s with no changes; smoke test 4.2 / 4.5 s (nginx 200 on loopback, MariaDB `SELECT 1`, `/info.json` with build 35245, all 10 Prometheus targets up: Prometheus, node_exporter of the three hosts across their firewalls, and six targets of the observability jobs); destroy 10.3 / 10.1 s, nothing left on the daemon. These runs predate the restore test, now the last step before the destroy; it was not run at this commit | `task e2e:local` with the luminare collections built from the development branches of both repositories and installed through `ANSIBLE_COLLECTIONS_PATH` (the collection step then only lists them), `devsec.hardening` 11.0.0 and `prometheus.prometheus` 0.30.2 from Ansible Galaxy; OpenTofu 1.13.1, the tools of `requirements-test.txt`, Docker Engine 29.2.1, one run at a time, 2026-10-22 |
+| `demo` values and the host part of the tunnel test, without the tunnel | 1 container (Debian 13, `edge-01` in `edge` and `db`): `tunnel_e2e_prepare.yml` 10 s; `site.yml` 214 s (164 tasks ok, 65 changed; the connector role skipped, as without a token), a second run 111 s with `changed=0` (150 ok); `smoke.yml` 3 s; nginx served the test page with the run's marker for `demo-web` on `127.0.0.1:8080`; the automation user logged in over SSH on loopback with the throwaway key and ran `sudo -n`. An earlier run with the site on `127.0.0.1:80` showed nginx still serving its default page there: its first reload could not bind the port while the distribution's default site held it. Hence `demo-web` and `show-web` use `127.0.0.1:8080`, and the tunnel test checks the marker on the host | the steps of `scripts/e2e_tunnel.sh` after the apply, by hand, on a container from `tofu/modules/docker_host` (name prefix `lab-e2echk-`, destroyed afterwards), with the collections built from the development branches of both repositories, Docker Engine 29.2.1, 2026-10-22 |
+| Plan of the tunnel test | 13 resources to add in 2.6 s: tunnel `demo-e2e` and its configuration (`demo-web` to `http://127.0.0.1:8080`, `demo-ssh` to `ssh://localhost:22`, then the 404 rule), 2 proxied CNAMEs with the `demo` comment, 2 Access applications with a Service Auth policy and a service token each, and the container `lab-e2e-demo-edge-01` with its network and image. `scripts/cf_preflight.sh` passed this plan against a stand-in zone without `demo-*` records and refused it (5 reasons) with the same objects already present | the init and plan steps of `scripts/e2e_tunnel.sh` by hand, in a copy of `tofu/envs/demo` with a local state, inside `unshare -n` with placeholder credentials, `example.com` and an unreachable `DOCKER_HOST`; the preflight against the stand-in API of `tests/test_cloudflare_api.py`; OpenTofu 1.13.1, 2026-10-22 |
+| Unit tests | 354 run, 0 failed, 8 skipped (three need gitleaks or markdownlint-cli2 and four need age, which CI's lint-test job does not install; one applies to the template repository only); the four age tests also passed on the workstation with age 1.3.2 | `bash scripts/run_tests.sh` in `python:3.12-slim` and `python:3.13-slim` with git added, 2026-10-22 |
+| ansible-lint | production profile passed: 0 failures, 0 warnings in 99 files (the three roles and their Molecule playbooks, the playbooks in `ansible/playbooks`, the `group_vars` of `local` and `demo` and the other YAML files of the repository; the collections' roles mocked) | the last step of `bash scripts/run_tests.sh` (offline, collections from the `ansible` package only), ansible-lint 26.10.1, in the same two containers, 2026-10-22 |
 | Molecule scenarios of the roles | the last run of each of the 3 roles on Debian 13 and on Ubuntu 24.04 (6 runs), 0 failed: every step passed, the idempotence step reported `changed=0` in each run; run time per role and platform (Debian 13 / Ubuntu 24.04): `docker` 216 s / 250 s (2026-10-22, with Docker's start limit raised and six firewall restarts within a minute checked), `monitoring` 263 s / 321 s, `deploy_target` 214 s / 207 s (2026-10-21), image builds from Docker's cache, package downloads and the Uptime Kuma image pull included | `molecule test --platform-name lab-<role>-<platform>` (what each CI matrix job runs) with the tools of `requirements-test.txt` and only the collections of its `ansible` package, at most two runs at a time, Docker Engine 29.2.1 |
 | OpenTofu tests with mocked providers | 145 runs in 5 modules and 4 environments, 0 failed (`cf_tunnel` 38, `hcloud_vm` 30, `docker_host` 15, `cf_access_app` 14, `pve_vm` 12; `lab` 12, `demo` 11, `showcase` 10, `local` 3), 2026-10-22; with the lowest provider versions of each range (`cloudflare` 5.25.0, `hcloud` 1.69.0) the 139 runs before the Docker storage tests of `docker_host` passed on 2026-10-21, and the 51 runs of `hcloud_vm`, `demo` and `showcase` after the change of the game port rules on 2026-10-22 | `bash scripts/check_tofu.sh test` with OpenTofu 1.13.1 and the locked providers; the lowest versions in a copy with exact constraints and no lock file |
 | State of the `local` environment | the state file holds no host name in clear text and a wrong passphrase cannot read it; the passphrase change of the [runbook](docs/runbook.md) re-encrypted the state with a new passphrase and the old one could no longer read it | `task init ENV=local`, `tofu apply`, the runbook procedure, `tofu destroy` with a random `TF_VAR_state_passphrase`; OpenTofu 1.13.1, 2026-10-21 |

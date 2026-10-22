@@ -3,9 +3,12 @@
 The failures below are those of the repository's own checks, of the OpenTofu checks (CI job
 `tofu`, `task tofu`) and of the environments' state
 ([ADR 0013](adr/0013-encrypted-state-in-r2-with-a-lock-file.md)), then of building and checking
-an environment (`task up`, `task e2e:local`), followed by the services that the roles in
-`ansible/roles` set up on a host: Docker, node_exporter, Uptime Kuma and the deploy target. The
-services of the collections' roles have runbooks in their own repositories.
+an environment (`task up`, `task e2e:local`), of the cloud workflows and the shared zone
+([ADR 0023](adr/0023-gated-cloud-workflows-with-read-only-plans-and-reviewed-applies.md),
+[ADR 0024](adr/0024-a-tunnel-test-guarded-by-a-zone-preflight-a-comparison-and-a-sweeper.md)),
+followed by the services that the roles in `ansible/roles` set up on a host: Docker,
+node_exporter, Uptime Kuma and the deploy target. The services of the collections' roles have
+runbooks in their own repositories.
 
 ## Failure: the secret scan finds a secret
 
@@ -130,8 +133,9 @@ OpenTofu merges with `encryption.tofu`); nothing is committed. Tested on 2026-10
 
 ## Procedure: rebuild an environment from nothing
 
-1. For `lab` and `demo`, export the zone's DNS records first (the operational safety net of
-   [ADR 0009](adr/0009-guard-rails-for-a-shared-dns-zone.md)); no task does this at this version.
+1. For `lab` and `demo`, have an age key for the zone copy: `task up` runs `task preflight` and
+   `task dns-backup` before its apply (the operational safety net of
+   [ADR 0009](adr/0009-guard-rails-for-a-shared-dns-zone.md)), and stops if either fails.
 2. Install the collections once: `task collections`.
 3. `task rebuild ENV=<env>`: destroy, then init, apply, inventory, configure and smoke; it prints
    how long it took. `lab` and `demo` ask before the destroy and the apply unless
@@ -154,6 +158,89 @@ plans again, and always destroys at the end
 | **Diagnosis** | The step names the cause: `tofu apply` (Docker, the host image), `collections` (the git tags, see [troubleshooting](troubleshooting.md)), `configure` (the failed task and host in the log; set `E2E_LOG_DIR` to keep both playbook logs), `second run` (a task that is not idempotent), `tofu plan` (a resource that drifts after its apply), `smoke` (the check and host). To look inside, run the steps one by one: `task up ENV=local`, then `docker exec lab-local-<host> journalctl -u <service>`. |
 | **Mitigation** | `task destroy ENV=local` with the same `TF_VAR_state_passphrase` removes what a manual run left. |
 | **Fix** | Fix the role or the inventory value that the failed task names, then run `task e2e:local` again. |
+
+## Procedure: turn on the cloud workflows
+
+The workflows `plan`, `apply`, `drift` and `e2e-tunnel` are skipped until the repository variable
+`CLOUD_ENVS_ENABLED` is `true` ([ADR 0023](adr/0023-gated-cloud-workflows-with-read-only-plans-and-reviewed-applies.md)).
+Before setting it (Settings, Secrets and variables, Actions, Variables):
+
+1. Create one age key per GitHub environment (`age-keygen`), keep each private key only in that
+   environment's secret `SOPS_AGE_KEY`, and add its public key to the creation rules of
+   `.sops.yaml` for the files that environment may read ([secrets/README.md](../secrets/README.md)).
+2. Create the GitHub environments (Settings, Environments):
+   - `lab-plan`: no reviewer, any branch; reads `secrets/lab-ci.enc.env`, `secrets/demo-ci.enc.env`
+     and `secrets/showcase-ci.enc.env` (read-only tokens, the state passphrase, a read-only R2 key).
+   - `demo` and `showcase`: required reviewer the owner, "Prevent self-reviews" off, branch `main`
+     only; read `secrets/demo.enc.env` or `secrets/showcase.enc.env` (write credentials).
+   - `demo-e2e`: no reviewer, branch `main` only; reads `secrets/demo-e2e.enc.env`, which holds a
+     Cloudflare token with the permissions that `task preflight ENV=demo` prints (one zone, one
+     account) and the account, zone and team values, but no cloud server token.
+3. Commit the encrypted files (`sops edit secrets/<file>`); an environment without its `-ci`
+   file is skipped by `plan` and `drift` with a notice. For the configure step of `apply`, put
+   the private key of `TF_VAR_ssh_public_key` into `secrets/demo.enc.env` and
+   `secrets/showcase.enc.env` as `SSH_PRIVATE_KEY_B64` (`base64 -w0 <key file>`, one line): the
+   job reaches the server through `demo-ssh` or `show-ssh` with it.
+4. Set `CLOUD_ENVS_ENABLED` to `true`, then run `e2e-tunnel` and `plan` once on demand.
+5. Once a month, open the Actions tab: GitHub turns off scheduled workflows of a public repository
+   after 60 days without activity; "Enable workflow" turns `drift` and `e2e-tunnel` on again.
+
+## Procedure: restore DNS records from a zone copy
+
+`task dns-backup ENV=<env>` (and `task up`) writes `backups/dns/<UTC time>.zone.age`, the zone
+file of the whole zone, encrypted for the operator's age key.
+
+1. Decrypt it into the terminal only: `age --decrypt --identity ~/.config/sops/age/keys.txt
+   backups/dns/<file>.zone.age | less`; never write the clear text into the repository.
+2. Find the lines of the records that changed; `task preflight ENV=<env>` and the comparison of
+   the workflows name them.
+3. Put back each record by hand in the Cloudflare dashboard (DNS, Records), or import the lines
+   that are missing (DNS, Records, Import and Export); an import adds records and never deletes
+   one, so first remove a wrong record with the same name.
+4. Run `task preflight ENV=<env>` again and `dig +short` the names that changed.
+
+## Procedure: remove left-over demo objects
+
+An interrupted run can leave Access applications, policies, service tokens, DNS records and a
+tunnel named `demo-*` in Cloudflare. `drift` reports them every night.
+
+1. Make sure no demo is in use: no `apply` of `demo` and no `e2e-tunnel` run is active, and no
+   cloud server labelled `env=demo` should stay.
+2. `task sweep:demo` lists what it would delete; a tunnel with a connector is never deleted (stop
+   its connector first).
+3. `task sweep:demo -- --delete` deletes the listed objects, applications first and tunnels last.
+4. After an interrupted `task e2e:tunnel` on a workstation, `bash scripts/e2e_tunnel.sh cleanup`
+   removes its containers and sweeps only what that run created.
+
+## Failure: the preflight refuses an apply
+
+| | |
+|---|---|
+| **Meaning** | `task preflight`, `task up`, the `apply` workflow or `task e2e:tunnel` stops with `preflight: refused:`. |
+| **Impact** | Nothing was applied. The guard stopped a write into the shared zone ([ADR 0024](adr/0024-a-tunnel-test-guarded-by-a-zone-preflight-a-comparison-and-a-sweeper.md)). |
+| **Diagnosis** | The line names the reason: a permission that a read cannot show (the token lacks it), `TF_VAR_zone_id does not belong to TF_VAR_zone` (wrong ID in the SOPS file), a record under the prefix without the comment `managed-by-tofu env=<env>` (made by hand), a name the plan would create that exists already (a running or left-over environment), or a plan that would touch a name outside the prefix. |
+| **Mitigation** | Leave the zone as it is. |
+| **Fix** | Correct the token or the IDs in the SOPS file; destroy the running environment or remove left-over demo objects (procedure above); rename or remove a record made by hand only after checking who uses it. Never weaken the check. |
+
+## Failure: the tunnel test fails
+
+| | |
+|---|---|
+| **Meaning** | The workflow `e2e-tunnel` (or `task e2e:tunnel`) ends with `Result: failed at "<step>"`. |
+| **Impact** | The run has destroyed its container and swept what it created; the zone comparison at the end shows whether any record outside `demo-*` changed (it must not). |
+| **Diagnosis** | The step names the cause: `preflight` (token, zone, left-overs), `tofu apply` (the Cloudflare API refused an attribute), `configure` (the role and host in the log), `tunnel connected` (the connector on the host reached no Cloudflare edge: it needs outbound port 7844, TCP or UDP), `demo-web through Access` (the HTTP status of each attempt; 200 without the marker means another site answered), `SSH through demo-ssh`, `sweep` (an object that could not be deleted). |
+| **Mitigation** | Run `bash scripts/e2e_tunnel.sh cleanup` (in CI it runs as the last step) and `task sweep:demo`. |
+| **Fix** | Fix the module, role or value that the step names, then run the test again on demand. |
+
+## Failure: an issue `Drift detected: <env>`
+
+| | |
+|---|---|
+| **Meaning** | The nightly `drift` workflow found a change between the code and the environment, a running cloud server labelled `env=demo`, or left-over `demo-*` objects. |
+| **Impact** | The next apply would change the resources that the issue lists. |
+| **Diagnosis** | The issue and the job summary list resources by address only. Plan the environment locally (`task plan ENV=<env>`) to see the attributes. |
+| **Mitigation** | Do not apply until the cause is known. |
+| **Fix** | Undo a change made by hand by applying the code, or put the change into the code and apply it through a pull request; destroy a forgotten demo (`task destroy ENV=demo`) and remove left-overs. Close the issue when the next nightly run is clean. |
 
 ## Failure: a Molecule scenario leaves containers behind
 

@@ -30,3 +30,38 @@ jobs:
     uses: ./.github/workflows/reusable-gitleaks.yml
     permissions:
       contents: read
+
+  # OpenTofu checks of tofu/ (scripts/check_tofu.sh, the same steps as "task tofu") and the IaC
+  # security scan of tofu/ and images/ (Trivy). No credentials: the providers are mocked, and the
+  # docker_host integration test uses the runner's own Docker daemon. OpenTofu, TFLint and Trivy
+  # are downloaded by version and checked by sha256; the compatibility step downloads Terraform
+  # the same way into a throwaway directory.
+  tofu:
+    name: tofu
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install OpenTofu, TFLint and Trivy (sha256-pinned)
+        run: |
+          bash scripts/install_tofu_tools.sh "$RUNNER_TEMP/tofu-tools" tofu tflint trivy
+          echo "$RUNNER_TEMP/tofu-tools" >> "$GITHUB_PATH"
+      - name: tofu fmt
+        run: bash scripts/check_tofu.sh fmt
+      - name: tofu validate
+        run: bash scripts/check_tofu.sh validate
+      - name: TFLint
+        run: bash scripts/check_tofu.sh tflint
+      - name: IaC security scan (trivy config of tofu/ and images/)
+        run: bash scripts/check_tofu.sh iac
+      - name: tofu test (mocked providers)
+        run: bash scripts/check_tofu.sh test
+      - name: tofu test (docker_host on the runner's Docker daemon)
+        run: bash scripts/check_tofu.sh integration
+      - name: Terraform compatibility (terraform validate)
+        run: bash scripts/check_tofu.sh compat

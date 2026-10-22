@@ -1,5 +1,5 @@
 # Task runner (https://taskfile.dev; go-task version in docs/toolchain.md). "task --list" shows
-# every target. "task lint" and "task test" run the checks and tests that CI runs.
+# every target. "task lint", "task test" and "task tofu" run the checks and tests that CI runs.
 version: "3"
 
 vars:
@@ -49,3 +49,11 @@ tasks:
       TEST_VENV: "{{.VENV}}"
     cmds:
       - bash scripts/run_tests.sh
+
+  tofu:
+    desc: >-
+      Run the OpenTofu checks of CI's "tofu" job: fmt, validate, TFLint, the IaC security scan
+      (Trivy), the mocked tests, the docker_host test on the local Docker daemon and the Terraform
+      compatibility check (choose steps with "task tofu STEPS='fmt validate tflint iac test compat'")
+    cmds:
+      - bash scripts/check_tofu.sh {{.STEPS | default "all"}}

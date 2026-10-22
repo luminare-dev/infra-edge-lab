@@ -1,13 +1,22 @@
 # Configuration
 
-At this version the repository has no environment to configure yet; the options below change how
-the checks and tests run.
+At this version the repository has no environment to configure yet. The inputs and outputs of
+the OpenTofu modules are listed in each module's README:
+[pve_vm](../tofu/modules/pve_vm/README.md), [hcloud_vm](../tofu/modules/hcloud_vm/README.md),
+[cf_tunnel](../tofu/modules/cf_tunnel/README.md),
+[cf_access_app](../tofu/modules/cf_access_app/README.md) and
+[docker_host](../tofu/modules/docker_host/README.md). The zone is always an input (`zone`), never
+a value in the code.
+
+The options below change how the checks and tests run.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `VENV` (Taskfile variable, `task lint VENV=path`) | path | `.venv` | Python virtual environment that `task venv`, `task lint` and `task test` use. |
 | `TEST_VENV` (environment variable) | path | `$RUNNER_TEMP/venv-test` in CI, else `.venv` | Virtual environment into which `scripts/run_tests.sh` installs `requirements-test.txt` before it runs the unit tests. |
 | `GITHUB_REPOSITORY` (environment variable) | `owner/name` | the `origin` remote | Repository name for the name check of `scripts/forbidden_words.py`; set it when the clone has no `origin` remote. |
+| `STEPS` (Taskfile variable, `task tofu STEPS='fmt test'`) | list of steps | `all` | Steps of `scripts/check_tofu.sh`: `fmt`, `validate`, `tflint`, `iac` (Trivy), `test`, `integration` (needs Docker), `compat`, or `all`. |
+| `TF_PLUGIN_CACHE_DIR` (environment variable) | path | unset; `$RUNNER_TEMP/tofu-plugin-cache` in CI | Shared provider cache for `scripts/check_tofu.sh`; the providers are still checked against each lock file. |
 
 ## Secrets
 

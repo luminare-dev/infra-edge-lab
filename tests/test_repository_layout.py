@@ -201,7 +201,7 @@ class PreCommitTest(unittest.TestCase):
         text = read(".pre-commit-config.yaml")
         hooks = set(re.findall(r"(?m)^      - id: (\S+)$", text))
         expected = {"end-of-file-fixer", "trailing-whitespace", "shellcheck", "gitleaks-system", "yamllint",
-                    "sops-encrypted"}
+                    "sops-encrypted", "tofu-fmt", "tflint"}
         self.assertLessEqual(expected, hooks)
         self.assertIn("sops filestatus", text)
         self.assertIn(r"files: ^secrets/.*\.enc\.env$", text)

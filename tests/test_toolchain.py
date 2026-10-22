@@ -101,6 +101,19 @@ class BinaryPinsTest(unittest.TestCase):
         self.assertEqual(rows[0][1:], [version, version])
 
 
+class TofuJobPinsTest(unittest.TestCase):
+    def test_trivy_download_of_the_ci_job_matches_the_toolchain(self):
+        """CI's tofu job installs Trivy with scripts/install_tofu_tools.sh and runs the scan."""
+        pin = binaries()["trivy"]
+        script = read("scripts/install_tofu_tools.sh")
+        self.assertRegex(script, rf"(?m)^TRIVY_VERSION={re.escape(pin['version'])}$")
+        self.assertRegex(script, rf"(?m)^TRIVY_SHA256={pin['sha256']}$")
+        self.assertIn(pin["file"].replace(pin["version"], "${TRIVY_VERSION}"), script)
+        job = read(".github/workflows/ci.yml").split("\n  tofu:\n", 1)[1]
+        self.assertIn(" trivy\n", job.split("bash scripts/install_tofu_tools.sh", 1)[1].split("\n", 1)[0] + "\n")
+        self.assertIn("bash scripts/check_tofu.sh iac\n", job)
+
+
 class PythonPinsTest(unittest.TestCase):
     def test_compiled_file_has_a_hash_for_every_requirement(self):
         text = read("requirements-test.txt")

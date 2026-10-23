@@ -1,6 +1,6 @@
 # 0016. Collections from git tags, and one pinned bundle for the tests
 
-- **Status:** accepted
+- **Status:** accepted; the point "CI never installs `requirements.yml`" is superseded by [0022](0022-an-end-to-end-run-of-the-local-environment-on-every-pull-request.md)
 - **Date:** 2026-10-21
 
 ## Context
@@ -26,9 +26,10 @@ day it runs.
 Chosen option: 1.
 
 - `luminare.infra_edge` and `luminare.gameserver` are installed from
-  `https://github.com/luminare-dev/ansible-collection-<name>.git` at a tag (`v0.2.0`), so a run
-  always gets the reviewed release, and this repository holds no copy of their roles (a unit test
-  checks that `ansible/roles` has none of them).
+  `https://github.com/luminare-dev/ansible-collection-<name>.git` at a release tag (the newest
+  ones at this version: `v0.2.1` and `v0.2.0`), so a run always gets the reviewed release, and
+  this repository holds no copy of their roles (a unit test checks that `ansible/roles` has none
+  of them, and another that the README names the pinned tags).
 - The community collections are pinned to exactly the versions that the `ansible` package
   (14.5.0) bundles; a unit test compares both after the hash-pinned install, so lint, Molecule
   and a real run use the same versions. `devsec.hardening`, which the bundle does not include,
@@ -46,5 +47,6 @@ Chosen option: 1.
   `ansible/requirements.yml` follows, so the two cannot drift apart.
 - Bad: a new collection release reaches this repository only with the next `ansible` package
   (about once a month).
-- Bad: `ansible-galaxy collection install -r requirements.yml` needs the tagged collection
-  repositories to exist and to be readable; until then it fails.
+- Bad: `ansible-galaxy collection install -r requirements.yml` needs network access to GitHub
+  and the tags to stay where they are; both repositories are public and their releases immutable
+  (2026-10-22).

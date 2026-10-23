@@ -86,3 +86,14 @@ variable "wait_timeout" {
     error_message = "The wait_timeout must be a whole number of seconds, at least 10."
   }
 }
+
+variable "docker_storage_size" {
+  description = "Size limit of each of the two tmpfs mounts (/var/lib/docker, /var/lib/containerd) of the hosts in the groups monitoring and docker_hosts, which run Docker themselves, for example 2g."
+  type        = string
+  default     = "2g"
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*[kmg]$", var.docker_storage_size))
+    error_message = "The docker_storage_size must be a whole number followed by k, m or g, for example 2g."
+  }
+}

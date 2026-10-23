@@ -104,13 +104,107 @@ tools and puts them first on the `PATH`. Remove an outdated copy with
 
 ## `ansible-galaxy collection install -r requirements.yml` fails to clone a luminare collection
 
-**Cause:** the luminare collections are installed from their GitHub repositories at a release
-tag (`type: git`). The clone fails when the tag does not exist yet, when the repository is not
-readable from this machine, or without `git`.
+**Cause:** the luminare collections are cloned from their public GitHub repositories at the
+release tags pinned in `ansible/requirements.yml` (`type: git`). The clone fails without `git`,
+without access to `github.com`, or when the pinned tag is mistyped.
 
-**Fix:** check that `git ls-remote https://github.com/luminare-dev/ansible-collection-infra_edge.git v0.2.0`
-prints the tag. The tests of this repository never install these collections, so they are not
-affected.
+**Fix:** check that the tag in `ansible/requirements.yml` is one of the tags that
+`git ls-remote --tags https://github.com/luminare-dev/ansible-collection-infra_edge.git` (or
+`ansible-collection-gameserver.git`) lists, and that `git` and the network work. The unit tests
+and ansible-lint never install these collections, so they are not affected; `task collections`,
+`task e2e:local` and the CI workflow `e2e-local` are.
+
+## ansible-lint: `The role 'luminare.infra_edge.<role>' was not found`
+
+**Cause:** the playbooks name roles of the luminare collections, which ansible-lint mocks
+(`mock_roles` in `.ansible-lint`) because it runs offline. An older copy of such a collection in
+the collection path (for example `~/.ansible/collections/ansible_collections/luminare/`) takes
+precedence over the mock, and a role it lacks is then missing.
+
+**Fix:** remove that copy if nothing else needs it, or run ansible-lint with a collection path
+without it (CI has none). A role added to `site.yml` needs a `mock_roles` entry;
+`tests/test_playbooks.py` checks the list.
+
+## `task e2e:local`: `tofu/envs/local/terraform.tfstate is left from an earlier run`
+
+**Cause:** an earlier run (or `task up ENV=local`) was not destroyed. Its state is encrypted with
+that run's passphrase, which the new run does not know, and its containers may still exist.
+
+**Fix:** destroy it with its passphrase (`TF_VAR_state_passphrase=<passphrase> task destroy
+ENV=local`). If the passphrase is lost and `docker ps -a --filter name=lab-local-` lists nothing,
+delete `tofu/envs/local/terraform.tfstate` and `terraform.tfstate.backup`; otherwise remove the
+containers, the network `lab-local` and the image `lab-systemd-host-*` first.
+
+## `task e2e:local`: `the second run changed something`
+
+**Cause:** a task reports a change on every run, so the playbook is not idempotent; the lines
+starting with `changed:` before the message name the tasks.
+
+**Fix:** make the task idempotent in its role (in this repository or in the collection it comes
+from), never by adding `changed_when: false` to a task that really changes something. A
+service that a role starts again on the second run was stopped by something in the first run:
+read its journal (`docker exec lab-local-<host> journalctl -u <service>`).
+
+## `Temporary failure resolving '<host>'` in the local environment after the base role
+
+**Cause:** the base role's firewall starts with `flush ruleset`, which also removes the NAT rules
+through which a container reaches Docker's DNS server, and the drop-in
+`/etc/nftables.d/05-local-container-dns.nft` that puts them back is missing (the playbook ran
+without `playbooks/local_prepare.yml`, which imports `playbooks/container_dns.yml`).
+
+**Fix:** run `task configure ENV=local`, which runs `local_prepare.yml` first, or run that
+playbook and then `systemctl restart nftables` in the container
+([ADR 0022](adr/0022-an-end-to-end-run-of-the-local-environment-on-every-pull-request.md)).
+
+## `task e2e:tunnel`: `... is left from an earlier run` or `containers named lab-e2e-demo-* exist already`
+
+**Cause:** an earlier run was interrupted before its own clean-up, or its sweep failed; its work
+folder (or only its start time) and possibly its container and Cloudflare objects are still there.
+
+**Fix:** `bash scripts/e2e_tunnel.sh cleanup` with the same credentials: it removes the
+containers named `lab-e2e-demo-*` and sweeps the demo objects created since that run started,
+then deletes the folder. Then start the test again.
+
+## `preflight: refused: the token cannot read what ... grants`
+
+**Cause:** the Cloudflare token lacks a permission that the environment needs (the line names it),
+or the token is for another account. A read shows only the read half of each permission; the
+edit permissions show up at the first write.
+
+**Fix:** edit the token in the Cloudflare dashboard (My Profile, API Tokens) to hold the
+permissions that `task preflight ENV=<env>` prints, for the one zone and the one account, and put
+it into the environment's SOPS file.
+
+## SOPS: `error loading config: no matching creation rules found`
+
+**Cause:** `sops edit` or `sops encrypt` found no rule in `.sops.yaml` whose `path_regex` matches
+the file's path, or no `.sops.yaml` at all (the repository ships none; SOPS looks for it from the
+current folder upwards).
+
+**Fix:** run the command inside the clone and check the file name against the rules (for example
+`secrets/lab.enc.env`, not `secrets/lab.env`); the example in
+[configuration.md](configuration.md#write-sopsyaml) covers every file of the layout.
+
+## SOPS: `Failed to get the data key required to decrypt the SOPS file`
+
+**Cause:** none of the age keys that SOPS found can decrypt the file: the key is not among the
+file's recipients (each recipient is listed with `FAILED` below the message), the key file is not
+where SOPS looks (`~/.config/sops/age/keys.txt`, or `SOPS_AGE_KEY_FILE`, or the key itself in
+`SOPS_AGE_KEY`), or the file was encrypted before your key was added to `.sops.yaml`.
+
+**Fix:** `age-keygen -y ~/.config/sops/age/keys.txt` prints your public key; compare it with the
+recipients in `.sops.yaml`. If it is listed there but not in the file, someone who can decrypt the
+file runs `sops updatekeys <file>` and commits the result. In CI, check that the GitHub
+environment's secret `SOPS_AGE_KEY` holds the private key whose public key the rule lists.
+
+## `dns_backup.sh: no recipient`
+
+**Cause:** none of `DNS_BACKUP_RECIPIENTS`, `DNS_BACKUP_RECIPIENTS_FILE` or an age key in
+`SOPS_AGE_KEY_FILE` or `~/.config/sops/age/keys.txt` is there, so the zone copy could be
+encrypted for nobody. Nothing was exported.
+
+**Fix:** keep the operator's age key where SOPS expects it, or set `DNS_BACKUP_RECIPIENTS` to the
+public keys that may read the copy (`age-keygen -y <key file>` prints one).
 
 ## Molecule: a scenario stops for about two minutes when it starts Docker or node_exporter
 

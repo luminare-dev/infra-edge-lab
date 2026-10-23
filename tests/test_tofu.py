@@ -414,7 +414,7 @@ class EnvironmentScriptTest(unittest.TestCase):
     def test_rejects_wrong_input_before_running_anything(self):
         cases = {
             "missing environment": (("init",), {}),
-            "unknown action": (("apply", "lab"), {}),
+            "unknown action": (("import", "lab"), {}),
             "unknown environment": (("init", "prod"), {}),
             "unknown backend": (("init", "lab"), {"BACKEND": "s3"}),
             "missing SOPS file": (("plan", "lab"), {"SECRETS": "secrets/missing.enc.env"}),
@@ -425,6 +425,42 @@ class EnvironmentScriptTest(unittest.TestCase):
                 self.assertEqual(out.returncode, 2, out.stderr)
         self.assertEqual(self.calls(), [])
         self.assertEqual(list(self.root.rglob("backend_override.tf")), [])
+
+
+    def test_apply_destroy_and_output_pass_their_arguments(self):
+        """task up, task destroy and task inventory (scripts/environment.sh) run these."""
+        for args in (("apply", "local", "-auto-approve"), ("destroy", "local", "-auto-approve"),
+                     ("output", "local", "-json")):
+            with self.subTest(args=args):
+                out = self.run_script(*args)
+                self.assertEqual(out.returncode, 0, out.stderr)
+                self.assertEqual(out.stdout, "", "output must print nothing but the outputs")
+        self.assertEqual(self.calls(), [
+            "tofu [-chdir=tofu/envs/local] [apply] [-auto-approve] fetch=unset",
+            "tofu [-chdir=tofu/envs/local] [destroy] [-auto-approve] fetch=unset",
+            "tofu [-chdir=tofu/envs/local] [output] [-json] fetch=unset",
+        ])
+
+    def test_remote_state_actions_follow_the_last_init(self):
+        """Without the override file (the last init chose R2), every action needs the endpoint."""
+        for action in ("apply", "destroy", "output"):
+            with self.subTest(action=action):
+                out = self.run_script(action, "lab")
+                self.assertEqual(out.returncode, 2)
+                self.assertIn("AWS_ENDPOINT_URL_S3", out.stderr)
+        self.override("lab").write_text("# written by an init with BACKEND=local\n", encoding="utf-8")
+        out = self.run_script("output", "lab", "-raw", "tunnel_id")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(self.calls(), ["tofu [-chdir=tofu/envs/lab] [output] [-raw] [tunnel_id] fetch=unset"])
+
+    def test_showcase_is_never_destroyed(self):
+        out = self.run_script("destroy", "showcase", "-auto-approve", AWS_ENDPOINT_URL_S3=self.ENDPOINT)
+        self.assertEqual(out.returncode, 2)
+        self.assertIn("refusing to destroy showcase", out.stderr)
+        (self.root / "secrets" / "showcase.enc.env").write_text("never read\n", encoding="utf-8")
+        out = self.run_script("destroy", "showcase", TF_VAR_state_passphrase=None)
+        self.assertEqual(out.returncode, 2)
+        self.assertEqual(self.calls(), [], "neither sops nor tofu may run")
 
 
 class TerraformCompatibilityTest(unittest.TestCase):

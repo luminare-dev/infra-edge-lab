@@ -18,15 +18,16 @@ the requirements files and the README disagree.
 
 | Tool | Version | Purpose in this repository | File (linux amd64) | sha256 | Checksum source |
 |---|---|---|---|---|---|
-| OpenTofu | 1.13.1 | provisioning code in `tofu/` (CI `tofu`, `task tofu`; `task lint` runs `tofu fmt -check`) | `tofu_1.13.1_linux_amd64.tar.gz` | `378ada19d4bc70c43732004e8159be771b23b9a5afdf059e5f8a2b3fa2c70a69` | `tofu_1.13.1_SHA256SUMS` of the [release](https://github.com/opentofu/opentofu/releases/tag/v1.13.1), signed (`.sig`/`.pem` and `.gpgsig`) |
+| OpenTofu | 1.13.1 | provisioning code in `tofu/` (CI `tofu` and `e2e-local`, `task tofu`, the environment tasks; `task lint` runs `tofu fmt -check`) | `tofu_1.13.1_linux_amd64.tar.gz` | `378ada19d4bc70c43732004e8159be771b23b9a5afdf059e5f8a2b3fa2c70a69` | `tofu_1.13.1_SHA256SUMS` of the [release](https://github.com/opentofu/opentofu/releases/tag/v1.13.1), signed (`.sig`/`.pem` and `.gpgsig`) |
 | TFLint | 0.64.0 | linter for `tofu/` with its bundled Terraform ruleset, configured in `.tflint.hcl` (CI `tofu`, `task tofu`) | `tflint_linux_amd64.zip` | `cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537` | `checksums.txt` of the [release](https://github.com/terraform-linters/tflint/releases/tag/v0.64.0), keyless-signed (`.keyless.sig`, `.pem`) |
 | Terraform | 1.16.6 | compatibility check only: `terraform validate` of `tofu/` ([ADR 0005](adr/0005-opentofu-instead-of-terraform.md)); downloaded into a throwaway directory by `scripts/check_tofu.sh compat` | `terraform_1.16.6_linux_amd64.zip` | `38034b38d03096399a7a1264a14561a8029b2b496fd1f169452656e53968f1b7` | `terraform_1.16.6_SHA256SUMS` of the [release](https://releases.hashicorp.com/terraform/1.16.6/), signed by HashiCorp's release key (`_SHA256SUMS.sig`; signature checked 2026-10-21) |
-| go-task | 3.54.0 | `Taskfile.yml` (`task lint`, `task test`, `task tofu`) | `task_linux_amd64.tar.gz` | `680859dbb4d881a9c72d4d9a8f510825450849af8567deacd7302c01124416fb` | `task_checksums.txt` of the [release](https://github.com/go-task/task/releases/tag/v3.54.0) |
+| go-task | 3.54.0 | `Taskfile.yml` (`task lint`, `task test`, `task tofu`, `task e2e:local`; CI `e2e-local` downloads it with this sha256) | `task_linux_amd64.tar.gz` | `680859dbb4d881a9c72d4d9a8f510825450849af8567deacd7302c01124416fb` | `task_checksums.txt` of the [release](https://github.com/go-task/task/releases/tag/v3.54.0) |
 | gitleaks | 8.30.1 | secret scan of the full history (CI `secrets / gitleaks`, `task lint`) | `gitleaks_8.30.1_linux_x64.tar.gz` | `551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb` | `gitleaks_8.30.1_checksums.txt` of the [release](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1) |
 | actionlint | 1.7.12 | workflow linter (CI `ci / lint-test`, `task lint`) | `actionlint_1.7.12_linux_amd64.tar.gz` | `8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8` | `actionlint_1.7.12_checksums.txt` of the [release](https://github.com/rhysd/actionlint/releases/tag/v1.7.12) |
 | Trivy | 0.76.0 | IaC security scan of `tofu/` and `images/` (`trivy config` with the checks built into the release, offline; accepted findings with their reason in `.trivyignore.yaml`) (CI `tofu`, `task tofu`) | `trivy_0.76.0_Linux-64bit.tar.gz` | `e24b1c51293c1b15e4ba8d45bbc7891ba053f90278ec2698f3562c993e145fe7` | `trivy_0.76.0_checksums.txt` of the [release](https://github.com/aquasecurity/trivy/releases/tag/v0.76.0), Sigstore bundle (`.sigstore.json`) |
-| SOPS | 3.13.3 | encrypts the dotenv files in `secrets/` | `sops-v3.13.3.linux.amd64` | `e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b` | `sops-v3.13.3.checksums.txt` of the [release](https://github.com/getsops/sops/releases/tag/v3.13.3), Sigstore bundle |
-| age | 1.3.2 | keys for SOPS | `age-v1.3.2-linux-amd64.tar.gz` | `cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10` | asset digest of the [release](https://github.com/FiloSottile/age/releases/tag/v1.3.2) and its `.proof` file |
+| SOPS | 3.13.3 | encrypts the dotenv files in `secrets/`; the cloud workflows (plan, apply, drift, e2e-tunnel) download it with this sha256 to decrypt them | `sops-v3.13.3.linux.amd64` | `e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b` | `sops-v3.13.3.checksums.txt` of the [release](https://github.com/getsops/sops/releases/tag/v3.13.3), Sigstore bundle |
+| age | 1.3.2 | keys for SOPS; encrypts the zone copies of `task dns-backup` | `age-v1.3.2-linux-amd64.tar.gz` | `cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10` | asset digest of the [release](https://github.com/FiloSottile/age/releases/tag/v1.3.2) and its `.proof` file |
+| cloudflared | 2026.10.2 | `cloudflared access ssh` on the control node: the SSH check of `task e2e:tunnel` (`scripts/e2e_tunnel.sh` downloads it with this sha256), and SSH through the tunnel to a cloud server of `demo` or `showcase` (`task configure`, `task smoke`; the `apply` workflow downloads it with this sha256); the same release that the role `luminare.infra_edge.cloudflared` installs on the hosts | `cloudflared-linux-amd64` | `35fbdd2beb378436c7da377d7358cea8e33f9c94a6705d1d8036bf9b0d6d8005` | "SHA256 Checksums" in the notes of the [release](https://github.com/cloudflare/cloudflared/releases/tag/2026.10.2), equal to GitHub's asset digest and the download checked on 2026-10-22 |
 | Node.js | 24.22.0 | runs markdownlint-cli2 locally | `node-v24.22.0-linux-x64.tar.xz` | `cc2f601cee82d9a5a233302fe307abc600727035fd7d2c3a3571755989e95008` | [`SHASUMS256.txt`](https://nodejs.org/dist/v24.22.0/SHASUMS256.txt) (signed `SHASUMS256.txt.asc`) |
 
 markdownlint-cli2 **0.23.2** is the version that CI's `DavidAnson/markdownlint-cli2-action`
@@ -112,6 +113,24 @@ by hand like the binary tools ([runbook](runbook.md#procedure-upgrade-node_expor
 
 Docker Engine itself comes from Docker's signed APT repository (newest `stable` release on the
 first run), the other packages from the distribution.
+
+## What the playbook downloads
+
+`ansible/playbooks/site.yml` runs the roles of the collections in
+[ansible/requirements.yml](../ansible/requirements.yml): `luminare.infra_edge` and
+`luminare.gameserver` from their GitHub repositories at a release tag (git checks the commit the
+tag points to), `devsec.hardening` 11.0.0 and `prometheus.prometheus` 0.30.2 from Ansible Galaxy
+(`ansible-galaxy` checks each download against the sha256 that Galaxy publishes), and the other
+community collections from the hash-pinned `ansible` package. The collections' roles pin their
+own downloads (for example cloudflared, json_exporter and blackbox_exporter); their repositories
+list them. The values of the `local` environment add one pin (checked on 2026-10-21):
+
+| What | Version | Pinned in | File | sha256 | Checksum source |
+|---|---|---|---|---|---|
+| Prometheus | 3.15.0 | `ansible/inventories/local/group_vars/monitoring.yml` (`site_prometheus_sha256`) | `prometheus-3.15.0.linux-amd64.tar.gz` | `2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0` | `sha256sums.txt` of the [release](https://github.com/prometheus/prometheus/releases/tag/v3.15.0); `site.yml` checks the download against the pin before the `prometheus` role installs it, and the role against that file |
+
+The game server of the `local` environment is never downloaded: it is the stand-in build of
+`tests/fake-artifact/`, built on the control node.
 
 ## Python
 

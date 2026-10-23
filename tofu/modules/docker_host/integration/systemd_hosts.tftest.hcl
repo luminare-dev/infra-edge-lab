@@ -50,6 +50,14 @@ run "boots_debian_hosts" {
     condition     = startswith(output.image_name, "lab-it-systemd-host-debian13:")
     error_message = "The image should be built for Debian 13."
   }
+
+  assert {
+    condition = (
+      docker_container.host["edge-01"].tmpfs["/var/lib/docker"] == "exec,size=2g" &&
+      !contains(keys(docker_container.host["db-01"].tmpfs), "/var/lib/docker")
+    )
+    error_message = "The monitoring host should run with the Docker storage tmpfs, the database host without."
+  }
 }
 
 run "boots_ubuntu_hosts" {

@@ -114,6 +114,22 @@ class TofuJobPinsTest(unittest.TestCase):
         self.assertIn("bash scripts/check_tofu.sh iac\n", job)
 
 
+class EndToEndWorkflowPinsTest(unittest.TestCase):
+    def test_go_task_download_matches_the_toolchain(self):
+        workflow = read(".github/workflows/e2e-local.yml")
+        pin = binaries()["go-task"]
+        self.assertIn(f"TASK_VERSION: {pin['version']}\n", workflow)
+        self.assertIn(f"TASK_SHA256: {pin['sha256']}\n", workflow)
+        self.assertIn(pin["file"], workflow)
+
+    def test_prometheus_pin_matches_the_toolchain(self):
+        monitoring = read("ansible/inventories/local/group_vars/monitoring.yml")
+        version = re.search(r"(?m)^prometheus_version: (\S+)$", monitoring).group(1)
+        sha256 = re.search(r"(?m)^site_prometheus_sha256: ([0-9a-f]{64})$", monitoring).group(1)
+        toolchain = read("docs/toolchain.md")
+        self.assertIn(f"`prometheus-{version}.linux-amd64.tar.gz` | `{sha256}`", toolchain)
+
+
 class PythonPinsTest(unittest.TestCase):
     def test_compiled_file_has_a_hash_for_every_requirement(self):
         text = read("requirements-test.txt")

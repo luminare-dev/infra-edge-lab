@@ -1,0 +1,73 @@
+# Read-only plans of lab, demo and showcase on pull requests that change the OpenTofu code
+# (docs/adr/0023). Off until the repository variable CLOUD_ENVS_ENABLED is "true": unset, every job
+# is skipped and CI stays green without any account. Never for a pull request from a fork or from
+# Dependabot (neither gets the environment's secret); on demand for any branch.
+#
+# Each job runs in the GitHub environment lab-plan (no reviewer), whose only secret SOPS_AGE_KEY
+# decrypts the read-only files secrets/<env>-ci.enc.env and nothing else (docs/runbook.md). An
+# environment without that file is skipped with a notice, and lab reports "lab offline" when its
+# Access endpoint answers with a tunnel error. The plan runs without the state lock (a read-only
+# token cannot write it) and never reads the tunnel token. Logs of a public repository are public:
+# only the summary by resource (scripts/plan_summary.py) reaches the log and the job summary, and
+# the plan file never leaves the runner (no artifact).
+name: plan
+
+on:
+  pull_request:
+    paths:
+      - "tofu/**"
+      - "scripts/cloud_ci.sh"
+      - "scripts/tofu_env.sh"
+      - "scripts/plan_summary.py"
+      - ".github/workflows/plan.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: plan-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: plan (${{ matrix.env }})
+    if: >-
+      vars.CLOUD_ENVS_ENABLED == 'true'
+      && (github.event_name != 'pull_request'
+          || (github.event.pull_request.head.repo.full_name == github.repository
+              && github.event.pull_request.user.login != 'dependabot[bot]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: lab-plan
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [lab, demo, showcase]
+    env:
+      # SOPS, pinned like every downloaded binary (docs/toolchain.md; tests/test_cloud_workflows.py
+      # keeps both equal).
+      SOPS_VERSION: 3.13.3
+      SOPS_SHA256: e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install OpenTofu and SOPS (sha256-pinned)
+        run: |
+          set -euo pipefail
+          bash scripts/install_tofu_tools.sh "$RUNNER_TEMP/tools" tofu
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/tools/sops" \
+            "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64"
+          echo "${SOPS_SHA256}  $RUNNER_TEMP/tools/sops" | sha256sum -c -
+          chmod 0755 "$RUNNER_TEMP/tools/sops"
+          echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
+
+      - name: Read-only plan (summary by resource only)
+        env:
+          ENV: ${{ matrix.env }}
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: bash scripts/cloud_ci.sh plan "$ENV"

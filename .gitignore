@@ -41,6 +41,12 @@ override.tofu
 # ansible/requirements.yml into ansible/collections (ansible.cfg)
 ansible/inventories/*/hosts.yml
 ansible/collections/
+# Throwaway secrets, SSH key and fake server build of the local environment
+# (playbooks/local_prepare.yml, the password lookups in its group_vars)
+ansible/inventories/*/.generated/
+
+# Encrypted zone copies of "task dns-backup" (scripts/dns_backup.sh) stay on the workstation
+/backups/
 
 # Secrets: in secrets/ only the README, examples and SOPS-encrypted dotenv files (*.enc.env)
 # are committed. Decrypted copies never are, wherever they are written.

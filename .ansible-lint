@@ -8,6 +8,21 @@ profile: production
 # CI does not fetch).
 offline: true
 
+# Roles of playbooks/site.yml that come from collections outside the "ansible" package
+# (ansible/requirements.yml). Offline they are not installed, so ansible-lint treats them as
+# present; their own repositories lint and test them. tests/test_playbooks.py keeps this list
+# equal to the roles the playbooks use.
+mock_roles:
+  - luminare.gameserver.fxserver
+  - luminare.gameserver.gameserver_observability
+  - luminare.gameserver.txadmin
+  - luminare.infra_edge.base
+  - luminare.infra_edge.cloudflared
+  - luminare.infra_edge.mariadb
+  - luminare.infra_edge.nginx
+  - luminare.infra_edge.restic_backup
+  - prometheus.prometheus.prometheus
+
 # ansible-lint 26.10.1 still lists ansible-core 2.15-2.19 as the supported releases for the
 # meta-runtime rule; 2.20 and 2.21 are maintained releases too (ansible-core support matrix).
 supported_ansible_also:

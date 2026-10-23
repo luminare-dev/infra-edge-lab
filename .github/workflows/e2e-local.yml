@@ -1,0 +1,62 @@
+# End-to-end test of the local environment on every pull request and on demand: "task e2e:local"
+# (scripts/e2e_local.sh) creates edge-01, db-01 and fx-01 as systemd containers on the runner's
+# Docker daemon with OpenTofu, writes the inventory, runs playbooks/site.yml twice (the second run
+# must change nothing), plans again (no changes), smoke-tests the hosts, backs each one up and
+# tests the restore, and always destroys them.
+# No secret and no account: the state passphrase is random per run, the game server is the fake
+# build of tests/fake-artifact/, and there is no tunnel, so the workflow is safe on fork pull
+# requests. The job summary shows the time of each step.
+#
+# It installs the collections of ansible/requirements.yml: the luminare collections from their
+# GitHub repositories at the pinned tags, so the run needs those repositories to be public and
+# the tags to exist; the community collections come from the hash-pinned "ansible" package or
+# from Ansible Galaxy at exact versions.
+name: e2e-local
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: e2e-local-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-local:
+    name: e2e-local
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      # go-task, pinned like every downloaded binary (docs/toolchain.md; tests/test_toolchain.py
+      # keeps both equal).
+      TASK_VERSION: 3.54.0
+      TASK_SHA256: 680859dbb4d881a9c72d4d9a8f510825450849af8567deacd7302c01124416fb
+      PY_COLORS: "0"
+      ANSIBLE_NOCOLOR: "1"
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install OpenTofu (sha256-pinned)
+        run: |
+          bash scripts/install_tofu_tools.sh "$RUNNER_TEMP/tools" tofu
+          echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
+
+      - name: Install go-task (sha256-pinned)
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/task_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 -o "$archive" \
+            "https://github.com/go-task/task/releases/download/v${TASK_VERSION}/task_linux_amd64.tar.gz"
+          echo "${TASK_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP/tools" task
+          "$RUNNER_TEMP/tools/task" --version
+
+      - name: task e2e:local
+        run: task e2e:local

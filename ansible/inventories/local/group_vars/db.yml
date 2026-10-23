@@ -1,0 +1,16 @@
+# Values for the database host of the local environment (db-01): MariaDB on the host's address in
+# the container network, port 3306 open through the firewall for the game servers only, and one
+# database with an account for each game server host.
+
+mariadb_bind_address: "{{ host_ip }}"
+mariadb_allowed_app_hosts: "{{ groups['fxserver'] | map('extract', hostvars, 'host_ip') | list }}"
+mariadb_databases: >-
+  {{ mariadb_allowed_app_hosts | map('community.general.dict_kv', 'host')
+     | map('combine', {'name': 'game', 'user': 'game', 'priv': 'game.*:ALL',
+                       'password': local_game_db_password}) | list }}
+local_game_db_password: >-
+  {{ lookup('ansible.builtin.password', local_generated_dir ~ '/game_db_password',
+            length=32, chars=local_password_chars) }}
+
+# The default is a quarter of the memory the container sees, which is the whole machine's.
+mariadb_innodb_buffer_pool_size: 128M

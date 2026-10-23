@@ -6,9 +6,13 @@ variable "hosts" {
   type = map(object({
     groups = list(string)
   }))
+  # The hosts and groups of the lab environment (tofu/envs/lab), so that the playbook runs here
+  # as it runs there: the tunnel connector, web server and monitoring on edge-01, the database on
+  # db-01 and the game server on fx-01.
   default = {
     edge-01 = { groups = ["edge", "monitoring"] }
     db-01   = { groups = ["db"] }
+    fx-01   = { groups = ["fxserver"] }
   }
 }
 

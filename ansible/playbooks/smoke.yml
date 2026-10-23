@@ -1,0 +1,123 @@
+# Smoke test of a configured environment: every check runs on the host it checks, through the
+# inventory's connection (for the local environment that is docker exec into each container), so
+# it tests what the host itself serves, not what reaches it through a tunnel. "task smoke
+# ENV=<env>" runs it from the ansible/ folder:
+#
+#   ansible-playbook -i inventories/<env> playbooks/smoke.yml
+#
+# Checks, each with a few retries for services that are still starting:
+#   edge        every nginx site answers 200 on its loopback listener (redirects followed)
+#   db          MariaDB answers SELECT 1 over the local socket
+#   fxserver    the game server answers /info.json on its game port with the configured build
+#   monitoring  Prometheus' targets are all up: its own, node_exporter of every host and the
+#               observability jobs of every game server (perf, json, blackbox)
+# It changes nothing on the hosts.
+
+- name: Smoke test of the web server
+  hosts: edge
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Every nginx site answers 200 on its loopback listener
+      ansible.builtin.uri:
+        url: "http://{{ item.listen | default('127.0.0.1:8080', true) }}/"
+        headers:
+          Host: "{{ item.server_name.split() | first }}"
+        follow_redirects: all
+        status_code: 200
+      loop: "{{ nginx_sites | default([]) }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.listen | default('127.0.0.1:8080', true) }} -> {{ item.upstream }})"
+      register: smoke_nginx
+      until: smoke_nginx is succeeded
+      retries: 20
+      delay: 3
+
+- name: Smoke test of the database
+  hosts: db
+  become: true
+  gather_facts: false
+  tasks:
+    - name: MariaDB answers SELECT 1 over the local socket
+      ansible.builtin.command:
+        argv: [mariadb, --batch, --skip-column-names, --execute, SELECT 1]
+      changed_when: false
+      register: smoke_mariadb
+      until: smoke_mariadb is succeeded and smoke_mariadb.stdout == '1'
+      retries: 10
+      delay: 3
+
+- name: Smoke test of the game server
+  hosts: fxserver
+  become: false
+  gather_facts: false
+  tasks:
+    - name: The game server answers /info.json on its game port
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ fxserver_game_port | default(30120) }}/info.json"
+        return_content: true
+        status_code: 200
+      register: smoke_info
+      until: smoke_info is succeeded
+      retries: 30
+      delay: 3
+
+    - name: /info.json names the configured build
+      ansible.builtin.assert:
+        that:
+          - smoke_info.json.server is search('\\b' ~ fxserver_build ~ '\\b')
+        fail_msg: >-
+          /info.json reports {{ smoke_info.json.server | default('no server string') }}, not build
+          {{ fxserver_build }}.
+        quiet: true
+      when: fxserver_build is defined
+
+- name: Smoke test of the monitoring
+  hosts: monitoring
+  become: false
+  gather_facts: false
+  vars:
+    smoke_prometheus_url: "{{ gameserver_observability_prometheus_url | default('http://127.0.0.1:9090', true) }}"
+    # Jobs that must have targets: Prometheus itself, node_exporter, and the observability jobs
+    # when there are game servers.
+    smoke_jobs: >-
+      {{ ['prometheus', 'node']
+         + (['fxserver_perf', 'fxserver_json', 'fxserver_blackbox'] if groups['fxserver'] | length > 0 else []) }}
+  tasks:
+    - name: Every Prometheus target is up (scrapes run every 15 to 30 seconds)
+      ansible.builtin.uri:
+        url: "{{ smoke_prometheus_url }}/api/v1/targets?state=active"
+        return_content: true
+        status_code: 200
+      register: smoke_targets
+      vars:
+        smoke_active: "{{ smoke_targets.json.data.activeTargets | default([]) }}"
+      until: >-
+        smoke_targets is succeeded
+        and smoke_active | length > 0
+        and smoke_active | rejectattr('health', 'equalto', 'up') | list | length == 0
+        and smoke_jobs | difference(smoke_active | map(attribute='labels.job') | unique) | length == 0
+        and smoke_active | selectattr('labels.job', 'equalto', 'node') | list | length
+            == groups['all'] | length
+      retries: 30
+      delay: 5
+
+    # The observability pack's host and build alerts name a game server by this label.
+    - name: The node_exporter targets of the game server hosts carry the server label
+      vars:
+        smoke_node_servers: >-
+          {{ smoke_targets.json.data.activeTargets | selectattr('labels.job', 'equalto', 'node')
+             | map(attribute='labels') | selectattr('server', 'defined') | map(attribute='server') | sort }}
+      ansible.builtin.assert:
+        that:
+          - smoke_node_servers == groups['fxserver'] | sort
+        fail_msg: >-
+          The node targets carry the server labels {{ smoke_node_servers }}, expected one for each game
+          server host: {{ groups['fxserver'] | sort }}.
+        quiet: true
+
+    - name: Show the targets
+      ansible.builtin.debug:
+        msg: >-
+          {{ smoke_targets.json.data.activeTargets | map(attribute='labels.job') | list | length }} targets up:
+          {{ smoke_targets.json.data.activeTargets | map(attribute='labels.job') | unique | sort | join(', ') }}

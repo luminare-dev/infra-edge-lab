@@ -1,0 +1,171 @@
+# The playbook of every environment: it configures the hosts that OpenTofu created, from the
+# inventory that scripts/render_inventory.py writes from the environment's "hosts" output and the
+# environment's group_vars (ansible/inventories/<env>/). Run it from the ansible/ folder:
+#
+#   ansible-playbook -i inventories/<env> playbooks/site.yml
+#
+# "task configure ENV=<env>" runs it (for the local environment after playbooks/local_prepare.yml,
+# for the others with the tunnel token in the environment of this one command). The groups are
+# those of the hosts output (tofu/envs/*/variables.tf):
+#   edge          the tunnel connector (only when a tunnel token is present) and the web server
+#   db            the database
+#   fxserver      the game server with txAdmin, and the upload-only deploy target
+#   monitoring    Docker with Uptime Kuma, Prometheus and the game server observability pack
+#   docker_hosts  Docker Engine (never together with fxserver: the docker role refuses it)
+# Every host gets the base hardening first, so the firewall layout with /etc/nftables.d exists
+# before any other role adds its drop-in there, then node_exporter, and the backups last, after
+# the roles that write what they back up. A second run changes nothing (task e2e:local checks it).
+#
+# The roles come from the luminare collections (ansible/requirements.yml, git tags), from
+# prometheus.prometheus and from ansible/roles (monitoring, docker, deploy_target).
+
+- name: Base hardening of every host
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - role: luminare.infra_edge.base
+
+- name: Docker Engine on the monitoring hosts and the container hosts
+  hosts: monitoring:docker_hosts
+  become: true
+  gather_facts: true
+  roles:
+    - role: docker
+
+- name: Host metrics on every host, Uptime Kuma where it is switched on
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - role: monitoring
+
+- name: Tunnel connector and web server on the edge host
+  hosts: edge
+  become: true
+  gather_facts: true
+  roles:
+    # The tunnel token comes from the environment of the control node (TUNNEL_TOKEN, the role's
+    # default) or from the inventory; without one there is no tunnel to connect to.
+    - role: luminare.infra_edge.cloudflared
+      when: (cloudflared_token | default(lookup('ansible.builtin.env', 'TUNNEL_TOKEN'), true)) | length > 0
+    - role: luminare.infra_edge.nginx
+
+- name: Database
+  hosts: db
+  become: true
+  gather_facts: true
+  roles:
+    - role: luminare.infra_edge.mariadb
+
+# One game server at a time, stopping at the first failure: an update that does not answer is
+# rolled back on that host, and the hosts after it keep their build (as the collection's own
+# playbook luminare.gameserver.gameserver does).
+- name: Game server, txAdmin and the deploy target
+  hosts: fxserver
+  become: true
+  gather_facts: true
+  serial: 1
+  max_fail_percentage: 0
+  roles:
+    - role: luminare.gameserver.fxserver
+    - role: luminare.gameserver.txadmin
+      when: fxserver_mode | default('plain') == 'txadmin'
+    - role: deploy_target
+
+- name: Prometheus and the game server observability pack on the monitoring host
+  hosts: monitoring
+  become: true
+  gather_facts: true
+  vars:
+    # Loopback or private addresses: 127.0.0.0/8 or ::1, the RFC 1918 networks, the RFC 6598
+    # shared address space and IPv6 unique local addresses (the pattern of the docker and
+    # monitoring roles; tests/test_playbooks.py keeps them equal).
+    # yamllint disable-line rule:line-length
+    site_private_address_re: '^(127(\.[0-9]{1,3}){3}|10(\.[0-9]{1,3}){3}|172\.(1[6-9]|2[0-9]|3[01])(\.[0-9]{1,3}){2}|192\.168(\.[0-9]{1,3}){2}|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])(\.[0-9]{1,3}){2}|::1|[fF][cCdD][0-9a-fA-F]{2}:[0-9a-fA-F:]*)$'
+    # The host of "host:port" or "[host]:port".
+    site_prometheus_listen_host: >-
+      {{ ((prometheus_web_listen_address | default('0.0.0.0:9090')).rsplit(':', 1) | first).strip('[]') }}
+  pre_tasks:
+    # The prometheus role listens on 0.0.0.0:9090 by default, and Prometheus has no login.
+    - name: Check that Prometheus listens on a loopback or private address only
+      ansible.builtin.assert:
+        that:
+          - site_prometheus_listen_host is match(site_private_address_re)
+        fail_msg: >-
+          prometheus_web_listen_address is {{ prometheus_web_listen_address | default('0.0.0.0:9090 (the default)') }}:
+          set it to a loopback or private address with a port (for example 127.0.0.1:9090) in the
+          inventory; Prometheus has no login and must never listen on a public address. Nothing
+          was changed.
+        quiet: true
+
+    # The release archive is checked against the sha256 pinned in the inventory
+    # (site_prometheus_sha256, the linux-amd64 archive of prometheus_version; empty skips both
+    # checks) before the prometheus role installs anything: it is downloaded into the role's cache
+    # folder on the control node and must match the pin, or the play stops here. The role then
+    # finds the file there (its download asks the server for the file only when it changed since
+    # that copy) and checks it against the release's sha256sums.txt before it unpacks it.
+    - name: Download the Prometheus release archive and check it against the pinned sha256
+      when: site_prometheus_sha256 | default('') | length > 0
+      block:
+        - name: Check that the pin and the cache folder fit this host
+          ansible.builtin.assert:
+            that:
+              - ansible_facts['architecture'] == 'x86_64'
+              - prometheus_local_cache_path is defined
+            fail_msg: >-
+              site_prometheus_sha256 pins the linux-amd64 archive and needs prometheus_local_cache_path
+              in the inventory; this host is {{ ansible_facts['architecture'] }}. Set both for this host,
+              or leave site_prometheus_sha256 empty. Nothing was changed.
+            quiet: true
+
+        - name: Create the cache folder of the prometheus role on the control node
+          ansible.builtin.file:
+            path: "{{ prometheus_local_cache_path }}"
+            state: directory
+            mode: "0755"
+          delegate_to: localhost
+          become: false
+
+        - name: Download the archive into it; it must match the pin
+          ansible.builtin.get_url:
+            url: >-
+              https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{
+              prometheus_version }}.linux-amd64.tar.gz
+            dest: "{{ prometheus_local_cache_path }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+            checksum: "sha256:{{ site_prometheus_sha256 }}"
+            mode: "0644"
+          delegate_to: localhost
+          become: false
+  roles:
+    - role: prometheus.prometheus.prometheus
+    - role: luminare.gameserver.gameserver_observability
+  post_tasks:
+    # Had the server sent the archive to the role a second time, this would show that the copy it
+    # unpacked is not the pinned one.
+    - name: Check the Prometheus release archive against the pinned sha256 again
+      when: site_prometheus_sha256 | default('') | length > 0
+      block:
+        - name: Read the sha256 of the archive that the prometheus role unpacked
+          ansible.builtin.stat:
+            path: "{{ prometheus_local_cache_path }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+            checksum_algorithm: sha256
+          delegate_to: localhost
+          become: false
+          register: site_prometheus_archive
+
+        - name: Compare it with the pin
+          ansible.builtin.assert:
+            that:
+              - site_prometheus_archive.stat.checksum | default('') == site_prometheus_sha256
+            fail_msg: >-
+              The Prometheus {{ prometheus_version }} archive does not have the sha256 pinned in
+              site_prometheus_sha256.
+            quiet: true
+
+- name: Backups of every host
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - role: luminare.infra_edge.restic_backup

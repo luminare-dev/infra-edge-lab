@@ -1,0 +1,38 @@
+# Values for every host of the demo environment (tofu/envs/demo): one host that is thrown away
+# after each use, a cloud server (substrate hcloud) or, for the tunnel end-to-end test
+# (scripts/e2e_tunnel.sh), a systemd container on the local Docker daemon (substrate docker). The
+# playbook is the same as for every other environment (playbooks/site.yml). Its hostnames are
+# published through the demo tunnel behind Access, and SSH reaches the host only through the
+# tunnel hostname demo-ssh, never directly.
+#
+# No secret is written here. The admin and the automation user get the public key in
+# TF_VAR_ssh_public_key: the key that the cloud server gets at its first boot (secrets/demo.enc.env),
+# or the throwaway key of the tunnel test. Passwords are created on first use by the password
+# lookup in .generated/ next to the inventory (git-ignored, mode 0600), which suits a host that
+# lives for one run; the tunnel test keeps its inventory in a folder that it removes at the end.
+
+# The folder of the generated files on the control node.
+demo_generated_dir: "{{ inventory_dir }}/.generated"
+
+# Letters and digits only: every role here accepts these characters in its secrets.
+demo_password_chars:
+  - ascii_letters
+  - digits
+
+# base (luminare.infra_edge): both users get the key; without one the base role stops before any
+# change. SSH arrives through the tunnel connector on the host itself (the ingress rule of demo-ssh
+# is ssh://localhost:22), so the firewall admits it from the host only.
+base_admin_ssh_keys: "{{ [lookup('ansible.builtin.env', 'TF_VAR_ssh_public_key')] | select | list }}"
+base_automation_ssh_keys: "{{ base_admin_ssh_keys }}"
+base_ssh_allow_mode: loopback
+
+# monitoring: node_exporter on loopback only; the demo has no Prometheus host.
+monitoring_node_exporter_listen_address: 127.0.0.1
+
+# restic_backup (luminare.infra_edge): a repository in a folder of the host itself. The demo holds
+# nothing that outlives it, so its backups are thrown away with it.
+restic_backup_repository: /srv/restic-repo
+restic_backup_password: >-
+  {{ lookup('ansible.builtin.password', demo_generated_dir ~ '/restic_password',
+            length=40, chars=demo_password_chars) }}
+restic_backup_textfile_dir: /var/lib/node_exporter/textfile

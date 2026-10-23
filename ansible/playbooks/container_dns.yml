@@ -1,0 +1,76 @@
+# The name resolution of systemd containers on a Docker daemon, kept working under the base
+# firewall. It runs before playbooks/site.yml on the hosts of the environments that are containers:
+# local (imported by playbooks/local_prepare.yml) and the demo container of the tunnel end-to-end
+# test (imported by playbooks/tunnel_e2e_prepare.yml). A real host never gets it.
+#
+# The containers resolve names through Docker's DNS server on 127.0.0.11, which Docker reaches
+# through NAT rules in each container's own network namespace. The base role's /etc/nftables.conf
+# starts with "flush ruleset" (docs/adr/0009 of luminare.infra_edge), which removes those rules, so
+# every download after the first firewall load would fail. This drop-in (docs/adr/0022) puts the
+# same two translations back in a table of its own, with the ports Docker's DNS server listens on
+# in this container, so that every load of the ruleset keeps name resolution working. A real host
+# has no such rules and never gets this file. Another run changes nothing.
+
+- name: Keep the containers' name resolution working under the base firewall
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read the ports of Docker's DNS server in the container
+      ansible.builtin.command:
+        argv: [ss, -H, -l, -n, -t, -u, src, 127.0.0.11]
+      register: local_dns_sockets
+      changed_when: false
+
+    - name: Find the TCP and the UDP port
+      ansible.builtin.set_fact:
+        local_dns_ports:
+          tcp: "{{ local_dns_sockets.stdout | regex_search(local_dns_re.tcp, '\\1') | first | default('') }}"
+          udp: "{{ local_dns_sockets.stdout | regex_search(local_dns_re.udp, '\\1') | first | default('') }}"
+      vars:
+        # "tcp LISTEN 0 4096 127.0.0.11:36637 0.0.0.0:*" and "udp UNCONN 0 0 127.0.0.11:58036 0.0.0.0:*"
+        local_dns_re:
+          tcp: '(?m)^tcp\s+LISTEN\s.*127[.]0[.]0[.]11:([0-9]+)\s'
+          udp: '(?m)^udp\s.*127[.]0[.]0[.]11:([0-9]+)\s'
+
+    - name: Require both ports (the container must be on a user-defined Docker network)
+      ansible.builtin.assert:
+        that:
+          - local_dns_ports.tcp is match('^[0-9]+$')
+          - local_dns_ports.udp is match('^[0-9]+$')
+        fail_msg: >-
+          Docker's DNS server does not listen on 127.0.0.11 in this container ({{ local_dns_sockets.stdout }}).
+        quiet: true
+
+    - name: Create the nftables drop-in directory of the base role layout
+      ansible.builtin.file:
+        path: /etc/nftables.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Write the drop-in that keeps Docker's DNS translation
+      ansible.builtin.copy:
+        dest: /etc/nftables.d/05-local-container-dns.nft
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Written by playbooks/container_dns.yml (containers on Docker only, docs/adr/0022): Docker's
+          # DNS server on 127.0.0.11 listens on tcp/{{ local_dns_ports.tcp }} and udp/{{ local_dns_ports.udp }}
+          # in this container; these rules translate port 53 to them, as Docker's own rules did
+          # before "flush ruleset" removed them.
+          table ip local_container_dns {
+          	chain output {
+          		type nat hook output priority dstnat; policy accept;
+          		ip daddr 127.0.0.11 tcp dport 53 dnat to 127.0.0.11:{{ local_dns_ports.tcp }}
+          		ip daddr 127.0.0.11 udp dport 53 dnat to 127.0.0.11:{{ local_dns_ports.udp }}
+          	}
+
+          	chain postrouting {
+          		type nat hook postrouting priority srcnat; policy accept;
+          		ip saddr 127.0.0.11 tcp sport {{ local_dns_ports.tcp }} snat to :53
+          		ip saddr 127.0.0.11 udp sport {{ local_dns_ports.udp }} snat to :53
+          	}
+          }

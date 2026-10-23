@@ -1,0 +1,13 @@
+# Values for the edge host of the local environment (edge-01). The tunnel connector
+# (luminare.infra_edge.cloudflared) never runs here: the local environment has no tunnel, and
+# scripts/environment.sh clears TUNNEL_TOKEN for it.
+
+# nginx (luminare.infra_edge): the status page of Uptime Kuma (monitoring role, on the same host)
+# through a loopback site, with websockets passed through, as a tunnel hostname behind Access
+# would reach it. playbooks/smoke.yml requests every site in this list.
+nginx_sites:
+  - name: status
+    server_name: status.local.test
+    listen: 127.0.0.1:8081
+    upstream: http://127.0.0.1:3001
+    websocket: true

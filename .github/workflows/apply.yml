@@ -1,0 +1,117 @@
+# Gated apply of demo or showcase, on demand only (docs/adr/0023). Off until the repository
+# variable CLOUD_ENVS_ENABLED is "true". lab is never applied from CI: its write tokens stay on the
+# operator's workstation.
+#
+# The job "plan" shows the reviewer a read-only plan by resource (environment lab-plan). The job
+# "apply" then waits in the GitHub environment of the input (demo or showcase), which requires the
+# owner's approval and holds the SOPS_AGE_KEY of secrets/<env>.enc.env. It plans again with the
+# tunnel token for the first boot, checks that plan against the zone (scripts/cf_preflight.sh),
+# applies exactly that plan, checks that no record outside the environment changed, and runs the
+# inventory, configure and smoke steps (scripts/cloud_ci.sh apply). Ansible reaches the cloud
+# server over SSH through the tunnel only: cloudflared access ssh to <env>-ssh with the service
+# token from the outputs, and the private key in SSH_PRIVATE_KEY_B64 of the SOPS file
+# (scripts/environment.sh). One run per environment at a
+# time, never cancelled; demo shares its group with the tunnel test, which uses the same names.
+name: apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Environment to apply
+        type: choice
+        options: [demo, showcase]
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: cloud-${{ inputs.env }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: plan (${{ inputs.env }})
+    if: vars.CLOUD_ENVS_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: lab-plan
+    permissions:
+      contents: read
+    env:
+      SOPS_VERSION: 3.13.3
+      SOPS_SHA256: e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install OpenTofu and SOPS (sha256-pinned)
+        run: |
+          set -euo pipefail
+          bash scripts/install_tofu_tools.sh "$RUNNER_TEMP/tools" tofu
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/tools/sops" \
+            "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64"
+          echo "${SOPS_SHA256}  $RUNNER_TEMP/tools/sops" | sha256sum -c -
+          chmod 0755 "$RUNNER_TEMP/tools/sops"
+          echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
+
+      - name: Read-only plan for the review (summary by resource only)
+        env:
+          ENV: ${{ inputs.env }}
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: bash scripts/cloud_ci.sh plan "$ENV"
+
+  apply:
+    name: apply (${{ inputs.env }})
+    needs: plan
+    if: vars.CLOUD_ENVS_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # demo or showcase: a required reviewer (the owner), "Prevent self-reviews" off.
+    environment: ${{ inputs.env }}
+    permissions:
+      contents: read
+    env:
+      SOPS_VERSION: 3.13.3
+      SOPS_SHA256: e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
+      # cloudflared for "cloudflared access ssh" (docs/toolchain.md; tests/test_cloud_workflows.py
+      # keeps the pin equal to scripts/e2e_tunnel.sh).
+      CLOUDFLARED_VERSION: 2026.10.2
+      CLOUDFLARED_SHA256: 35fbdd2beb378436c7da377d7358cea8e33f9c94a6705d1d8036bf9b0d6d8005
+      PY_COLORS: "0"
+      ANSIBLE_NOCOLOR: "1"
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install OpenTofu, SOPS and cloudflared (sha256-pinned)
+        run: |
+          set -euo pipefail
+          bash scripts/install_tofu_tools.sh "$RUNNER_TEMP/tools" tofu
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/tools/sops" \
+            "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64"
+          echo "${SOPS_SHA256}  $RUNNER_TEMP/tools/sops" | sha256sum -c -
+          chmod 0755 "$RUNNER_TEMP/tools/sops"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/tools/cloudflared" \
+            "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64"
+          echo "${CLOUDFLARED_SHA256}  $RUNNER_TEMP/tools/cloudflared" | sha256sum -c -
+          chmod 0755 "$RUNNER_TEMP/tools/cloudflared"
+          echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
+
+      - name: Install Ansible (hash-pinned) and the collections
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes --only-binary=:all: -r requirements-test.txt
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          cd ansible && "$RUNNER_TEMP/venv/bin/ansible-galaxy" collection install -r requirements.yml
+
+      - name: Plan, preflight, apply, configure and smoke
+        env:
+          ENV: ${{ inputs.env }}
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: bash scripts/cloud_ci.sh apply "$ENV"

@@ -41,7 +41,7 @@ run "containers_can_run_systemd" {
   assert {
     condition = alltrue([
       for c in docker_container.host :
-      c.tmpfs == tomap({ "/run" = "rw", "/run/lock" = "rw" }) && c.stop_signal == "SIGRTMIN+3"
+      c.tmpfs["/run"] == "rw" && c.tmpfs["/run/lock"] == "rw" && c.stop_signal == "SIGRTMIN+3"
     ])
     error_message = "Every container should have tmpfs on /run and /run/lock and stop with systemd's signal."
   }
@@ -64,6 +64,58 @@ run "containers_can_run_systemd" {
     condition     = alltrue([for c in docker_container.host : c.wait && c.must_run])
     error_message = "The apply should wait until systemd has booted in every container."
   }
+}
+
+run "docker_storage_on_tmpfs_for_hosts_that_run_docker" {
+  command = plan
+
+  variables {
+    hosts = {
+      edge-01 = { groups = ["edge", "monitoring"] }
+      db-01   = { groups = ["db"] }
+      ci-01   = { groups = ["docker_hosts"] }
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      for name in ["edge-01", "ci-01"] : docker_container.host[name].tmpfs == tomap({
+        "/run"                = "rw"
+        "/run/lock"           = "rw"
+        "/var/lib/docker"     = "exec,size=2g"
+        "/var/lib/containerd" = "exec,size=2g"
+      })
+    ])
+    error_message = "Hosts in monitoring or docker_hosts run Docker and should get tmpfs for /var/lib/docker and /var/lib/containerd."
+  }
+
+  assert {
+    condition     = docker_container.host["db-01"].tmpfs == tomap({ "/run" = "rw", "/run/lock" = "rw" })
+    error_message = "Other hosts should get tmpfs on /run and /run/lock only."
+  }
+}
+
+run "docker_storage_size" {
+  command = plan
+
+  variables {
+    docker_storage_size = "512m"
+  }
+
+  assert {
+    condition     = docker_container.host["edge-01"].tmpfs["/var/lib/docker"] == "exec,size=512m"
+    error_message = "docker_storage_size should set the size of the Docker storage tmpfs."
+  }
+}
+
+run "rejects_a_docker_storage_size_without_unit" {
+  command = plan
+
+  variables {
+    docker_storage_size = "2048"
+  }
+
+  expect_failures = [var.docker_storage_size]
 }
 
 run "names_carry_the_prefix" {

@@ -1,12 +1,19 @@
 # Task runner (https://taskfile.dev; go-task version in docs/toolchain.md). "task --list" shows
-# every target. "task lint", "task test", "task tofu" and "task molecule" run the checks and tests
-# that CI runs; "task init", "task plan" and "task test" with ENV=<local|lab|demo|showcase> work
-# on one environment under tofu/envs (scripts/tofu_env.sh).
+# every target. "task lint", "task test", "task tofu", "task molecule" and "task e2e:local" run
+# the checks and tests that CI runs; "task init", "task plan" and "task test" with
+# ENV=<local|lab|demo|showcase> work on one environment under tofu/envs (scripts/tofu_env.sh), and
+# "task up", "task inventory", "task configure", "task smoke", "task destroy" and "task rebuild"
+# take it from OpenTofu to configured, checked hosts (scripts/environment.sh); "task restore-test"
+# tests the restore of the backups of an environment. "task preflight",
+# "task dns-backup", "task sweep:demo" and "task e2e:tunnel" are the Cloudflare tasks around an
+# apply (docs/adr/0024).
 version: "3"
 
 vars:
   # Python virtual environment for the hash-pinned tools; override with "task lint VENV=path".
   VENV: '{{.VENV | default ".venv"}}'
+  # Its bin folder as an absolute path: Ansible and Molecule run from the PATH, so it goes first.
+  VENV_BIN: '{{if hasPrefix "/" .VENV}}{{.VENV}}{{else}}{{joinPath .ROOT_DIR .VENV}}{{end}}/bin'
 
 tasks:
   default:
@@ -100,12 +107,161 @@ tasks:
         - name: ROLE
           enum: [docker, monitoring, deploy_target]
     dir: ansible/roles/{{.ROLE}}
-    vars:
-      # Molecule runs ansible-playbook from the PATH, so the virtual environment goes first.
-      VENV_BIN: '{{if hasPrefix "/" .VENV}}{{.VENV}}{{else}}{{joinPath .ROOT_DIR .VENV}}{{end}}/bin'
     env:
       MOLECULE_ROLE: "{{.ROLE}}"
     cmds:
       - >-
         PATH="{{.VENV_BIN}}:$PATH" molecule test
         {{if .PLATFORM}}--platform-name "lab-{{.ROLE}}-{{.PLATFORM}}"{{end}}
+
+  collections:
+    desc: >-
+      Install the collections of ansible/requirements.yml (the luminare collections at their git
+      tags, the community collections at their pins) into ansible/collections
+    deps: [venv]
+    dir: ansible
+    cmds:
+      - PATH="{{.VENV_BIN}}:$PATH" ansible-galaxy collection install -r requirements.yml
+
+  inventory:
+    desc: >-
+      Write ansible/inventories/ENV/hosts.yml from the OpenTofu outputs of one environment
+      (ENV=local|lab|demo|showcase; scripts/render_inventory.py)
+    requires:
+      vars:
+        - name: ENV
+          enum: [local, lab, demo, showcase]
+    cmds:
+      - bash scripts/environment.sh inventory {{.ENV}}
+
+  configure:
+    desc: >-
+      Run playbooks/site.yml on one environment (ENV=local|lab|demo|showcase; ansible-playbook
+      arguments after "--"): local after playbooks/local_prepare.yml and without a tunnel, the
+      others with the tunnel token fetched for this run only
+    deps: [venv]
+    requires:
+      vars:
+        - name: ENV
+          enum: [local, lab, demo, showcase]
+    cmds:
+      - PATH="{{.VENV_BIN}}:$PATH" bash scripts/environment.sh configure {{.ENV}} {{.CLI_ARGS}}
+
+  smoke:
+    desc: >-
+      Smoke-test one environment (ENV=local|lab|demo|showcase; playbooks/smoke.yml): nginx sites,
+      MariaDB, the game server's /info.json and every Prometheus target
+    deps: [venv]
+    requires:
+      vars:
+        - name: ENV
+          enum: [local, lab, demo, showcase]
+    cmds:
+      - PATH="{{.VENV_BIN}}:$PATH" bash scripts/environment.sh smoke {{.ENV}} {{.CLI_ARGS}}
+
+  restore-test:
+    desc: >-
+      Test the restore of the backups on every host of one environment (ENV=local|lab|demo|showcase;
+      playbooks/restore_test.yml): the newest snapshot of each host restored into a temporary
+      folder and compared with the snapshot, with the time it took; BACKUP_NOW=1 takes the
+      database dumps and a backup first
+    deps: [venv]
+    requires:
+      vars:
+        - name: ENV
+          enum: [local, lab, demo, showcase]
+    cmds:
+      - >-
+        PATH="{{.VENV_BIN}}:$PATH" bash scripts/environment.sh restore-test {{.ENV}}
+        {{if .BACKUP_NOW}}-e restore_test_backup_now=true{{end}} {{.CLI_ARGS}}
+
+  up:
+    desc: >-
+      Create and configure one environment (ENV=local|lab|demo|showcase): init, apply, inventory,
+      configure and smoke; the apply asks first except for local (or with AUTO_APPROVE=1).
+      Install the collections first (task collections)
+    deps: [venv]
+    requires:
+      vars:
+        - name: ENV
+          enum: [local, lab, demo, showcase]
+    cmds:
+      - PATH="{{.VENV_BIN}}:$PATH" bash scripts/environment.sh up {{.ENV}} {{.CLI_ARGS}}
+
+  destroy:
+    desc: >-
+      Destroy one environment (ENV=local|lab|demo; refused for showcase) and remove its generated
+      inventory; the destroy asks first except for local (or with AUTO_APPROVE=1)
+    requires:
+      vars:
+        - name: ENV
+          enum: [local, lab, demo, showcase]
+    cmds:
+      - bash scripts/environment.sh destroy {{.ENV}}
+
+  rebuild:
+    desc: >-
+      Destroy one environment and create it again, timed (ENV=local|lab|demo; refused for
+      showcase, the protected long-lived environment)
+    deps: [venv]
+    requires:
+      vars:
+        - name: ENV
+          enum: [local, lab, demo, showcase]
+    cmds:
+      - PATH="{{.VENV_BIN}}:$PATH" bash scripts/environment.sh rebuild {{.ENV}} {{.CLI_ARGS}}
+
+  e2e:local:
+    desc: >-
+      End-to-end test of the local environment, as CI's e2e-local workflow runs it: apply, inventory,
+      collections, site.yml twice (the second run must change nothing), a second plan without
+      changes, the smoke test, a backup and the restore test on every host, and always the
+      destroy (scripts/e2e_local.sh)
+    deps: [venv]
+    cmds:
+      - PATH="{{.VENV_BIN}}:$PATH" bash scripts/e2e_local.sh
+
+  preflight:
+    desc: >-
+      Check the Cloudflare token and the zone before an apply (ENV=lab|demo|showcase;
+      scripts/cf_preflight.sh): print the token permissions the environment needs, check what a
+      read can show of them, and refuse when the zone holds a record under the environment's prefix
+      that this repository did not create. Reads only; credentials from secrets/<env>.enc.env
+    requires:
+      vars:
+        - name: ENV
+          enum: [lab, demo, showcase]
+    cmds:
+      - bash scripts/cf_preflight.sh {{.ENV}}
+
+  dns-backup:
+    desc: >-
+      Export the whole DNS zone into an age-encrypted file in backups/dns (ENV=lab|demo|showcase
+      selects the credentials; scripts/dns_backup.sh). Recipients: DNS_BACKUP_RECIPIENTS, or the
+      public key of the operator's age key; the clear text never touches the disk
+    requires:
+      vars:
+        - name: ENV
+          enum: [lab, demo, showcase]
+    cmds:
+      - bash scripts/dns_backup.sh {{.ENV}}
+
+  sweep:demo:
+    desc: >-
+      List the objects of the demo environment that are left in Cloudflare (Access applications,
+      policies and service tokens, DNS records with the demo comment and tunnels without a
+      connector, all named demo-*); "task sweep:demo -- --delete" removes them. Run it only while no
+      demo is in use. Credentials from secrets/demo.enc.env
+    cmds:
+      - bash scripts/sweep_demo.sh {{.CLI_ARGS}}
+
+  e2e:tunnel:
+    desc: >-
+      End-to-end test of the tunnel, as CI's e2e-tunnel workflow runs it: the demo environment with
+      its host as a container on the local Docker daemon, a real tunnel with demo-web and demo-ssh
+      behind Access, site.yml, checks through Cloudflare, and always destroy, sweep and a zone
+      comparison (scripts/e2e_tunnel.sh). Credentials from secrets/demo-e2e.enc.env or the
+      environment; "bash scripts/e2e_tunnel.sh cleanup" removes what an interrupted run left
+    deps: [venv]
+    cmds:
+      - PATH="{{.VENV_BIN}}:$PATH" bash scripts/e2e_tunnel.sh

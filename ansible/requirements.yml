@@ -12,7 +12,7 @@ collections:
   - name: luminare.infra_edge
     type: git
     source: https://github.com/luminare-dev/ansible-collection-infra_edge.git
-    version: v0.2.0
+    version: v0.2.1
   # Game server and its web panel (luminare.gameserver.fxserver, txadmin, gameserver_observability).
   - name: luminare.gameserver
     type: git
@@ -34,3 +34,8 @@ collections:
     version: 6.0.2
   - name: devsec.hardening
     version: 11.0.0
+  # Prometheus on the monitoring hosts (playbooks/site.yml), which the gameserver_observability
+  # role of luminare.gameserver adds its jobs and rules to. Not in the "ansible" package: from
+  # Ansible Galaxy at this exact version, which ansible-galaxy checks against Galaxy's sha256.
+  - name: prometheus.prometheus
+    version: 0.30.2

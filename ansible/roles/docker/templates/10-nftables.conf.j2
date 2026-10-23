@@ -3,6 +3,12 @@
 # Docker added for its networks and published ports. PartOf= makes systemd restart Docker
 # whenever nftables.service is restarted or stopped; with live-restore the containers keep running
 # while dockerd restarts and adds its rules again. After= orders the start at boot the same way.
+# One playbook run can restart nftables.service several times within a minute (each role that
+# changes a drop-in reloads it), and Docker's own unit allows 3 starts in 60 seconds: after that
+# systemd would leave Docker stopped. 10 starts in 60 seconds keep it running through such a run
+# and still stop a crash loop.
 [Unit]
 After=nftables.service
 PartOf=nftables.service
+StartLimitIntervalSec=60
+StartLimitBurst=10

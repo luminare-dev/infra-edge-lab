@@ -46,13 +46,15 @@ locals {
     }
   }
 
-  # The connector runs on the host itself, so every origin is on localhost. The tunnel module
-  # appends the catch-all rule.
+  # The connector runs on the host itself, so every origin is on localhost. The web origin is the
+  # loopback listener of the nginx role's sites (127.0.0.1:8080); port 80 is held by the
+  # distribution's default site until the role's first reload, which then cannot bind it. The
+  # tunnel module appends the catch-all rule.
   ingress = concat(
     [
       {
         hostname       = "demo-web.${var.zone}"
-        service        = "http://localhost:80"
+        service        = "http://127.0.0.1:8080"
         origin_request = { access = local.access["demo-web"] }
       },
       { hostname = "demo-ssh.${var.zone}", service = "ssh://localhost:22" },

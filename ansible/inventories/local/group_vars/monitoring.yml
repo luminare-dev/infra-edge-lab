@@ -1,0 +1,51 @@
+# Values for the monitoring host of the local environment (edge-01): Docker with Uptime Kuma on
+# loopback, Prometheus 3.15.0 on loopback (prometheus.prometheus) with node_exporter of every host,
+# and the observability pack's exporters, jobs and rules for every game server
+# (luminare.gameserver.gameserver_observability).
+
+monitoring_uptime_kuma_enabled: true
+
+prometheus_version: 3.15.0
+# sha256 of prometheus-3.15.0.linux-amd64.tar.gz in the release's sha256sums.txt (2026-10-21).
+# playbooks/site.yml downloads the archive into prometheus_local_cache_path and checks it against
+# this pin before the prometheus role runs; the role then checks it against sha256sums.txt.
+site_prometheus_sha256: 2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0
+prometheus_local_cache_path: "{{ local_generated_dir }}/prometheus-{{ prometheus_version }}"
+prometheus_web_listen_address: 127.0.0.1:9090
+prometheus_external_labels:
+  env: local
+prometheus_global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+prometheus_scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - 127.0.0.1:9090
+  - job_name: node
+    static_configs: "{{ local_node_static_configs }}"
+# The targets of the node job: node_exporter of every host. A game server host carries the
+# observability pack's server label (its host name, as in gameserver_observability_targets below),
+# so that the pack's host and build alerts name the game server; the other hosts run none.
+local_node_static_configs: >-
+  {{ ([{'targets': groups['all'] | reject('in', groups['fxserver']) | map('extract', hostvars, 'host_ip')
+                   | map('regex_replace', '$', ':9100') | list}]
+      + groups['fxserver'] | map('extract', hostvars, 'host_ip') | map('regex_replace', '$', ':9100')
+        | map('regex_findall', '.+') | map('community.general.dict_kv', 'targets')
+        | zip(groups['fxserver'] | map('community.general.dict_kv', 'server')
+              | map('community.general.dict_kv', 'labels'))
+        | map('combine') | list)
+     | selectattr('targets') | list }}
+# No file_sd targets and none of the role's example alert rules: the alert rules are the pack's,
+# which the gameserver_observability role installs.
+prometheus_targets: {}
+prometheus_alert_rules: []
+
+gameserver_observability_targets: >-
+  {{ groups['fxserver'] | map('extract', hostvars, 'host_ip')
+     | map('community.general.dict_kv', 'address')
+     | zip(groups['fxserver'] | map('community.general.dict_kv', 'server'))
+     | map('combine') | list }}
+gameserver_observability_perf_user: prometheus
+gameserver_observability_perf_password: "{{ local_perf_password }}"

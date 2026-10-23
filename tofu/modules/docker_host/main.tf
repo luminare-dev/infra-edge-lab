@@ -17,6 +17,20 @@ locals {
     env        = var.env
     managed-by = "tofu"
   }
+
+  # Hosts in these groups run Docker Engine themselves (the docker role of ansible/roles). Docker's
+  # overlay storage cannot stack on the container's own overlay root file system, so these hosts
+  # get tmpfs mounts (with exec) for /var/lib/docker and /var/lib/containerd, as the Molecule
+  # scenarios do (.config/molecule/config.yml).
+  docker_groups = ["monitoring", "docker_hosts"]
+  base_tmpfs = {
+    "/run"      = "rw"
+    "/run/lock" = "rw"
+  }
+  docker_tmpfs = {
+    "/var/lib/docker"     = "exec,size=${var.docker_storage_size}"
+    "/var/lib/containerd" = "exec,size=${var.docker_storage_size}"
+  }
 }
 
 resource "docker_image" "host" {
@@ -68,10 +82,11 @@ resource "docker_container" "host" {
   cgroupns_mode = "host"
   command       = ["/lib/systemd/systemd"]
   stop_signal   = "SIGRTMIN+3"
-  tmpfs = {
-    "/run"      = "rw"
-    "/run/lock" = "rw"
-  }
+  tmpfs = (
+    length(setintersection(each.value.groups, local.docker_groups)) > 0
+    ? merge(local.base_tmpfs, local.docker_tmpfs)
+    : local.base_tmpfs
+  )
 
   volumes {
     host_path      = "/sys/fs/cgroup"

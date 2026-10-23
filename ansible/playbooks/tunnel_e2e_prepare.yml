@@ -1,0 +1,85 @@
+# What the tunnel end-to-end test (scripts/e2e_tunnel.sh, task e2e:tunnel) needs before
+# playbooks/site.yml configures the demo container, and nothing a real demo host gets. The script
+# runs it from the ansible/ folder with its own inventory and variables file:
+#
+#   ansible-playbook -i <work>/inventory playbooks/tunnel_e2e_prepare.yml -e @<work>/e2e-vars.json
+#
+# It keeps Docker's DNS server reachable under the base firewall (playbooks/container_dns.yml), and
+# starts a test page on 127.0.0.1:8000 of the edge host: a static page with the marker of this
+# run (tunnel_e2e_marker, random per run), served by Python's http.server as a transient user.
+# The script's nginx site for demo-web proxies to it, so a request through the tunnel and Access
+# that returns the marker can only have reached this host. Another run changes nothing.
+
+- name: Keep the container's name resolution working under the base firewall
+  ansible.builtin.import_playbook: container_dns.yml
+
+- name: Start the test page of the tunnel end-to-end test on the edge host
+  hosts: edge
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check the marker of this run
+      ansible.builtin.assert:
+        that:
+          - tunnel_e2e_marker is defined
+          - tunnel_e2e_marker is match('^[A-Za-z0-9_-]{16,64}$')
+        fail_msg: >-
+          tunnel_e2e_marker must be set by scripts/e2e_tunnel.sh: 16 to 64 letters, digits, - or _.
+        quiet: true
+
+    - name: Create the folder of the test page
+      ansible.builtin.file:
+        path: /srv/tunnel-e2e
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Write the test page with the marker of this run
+      ansible.builtin.copy:
+        dest: /srv/tunnel-e2e/index.html
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          <!doctype html>
+          <title>Tunnel end-to-end test</title>
+          <p>Test page of the tunnel end-to-end test, run {{ tunnel_e2e_marker }}.</p>
+
+    - name: Write the unit of the test page (loopback only, as a transient user)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/tunnel-e2e-page.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Test page of the tunnel end-to-end test (scripts/e2e_tunnel.sh)
+
+          [Service]
+          ExecStart=/usr/bin/python3 -m http.server 8000 --bind 127.0.0.1 --directory /srv/tunnel-e2e
+          DynamicUser=true
+          ProtectSystem=strict
+          ProtectHome=true
+          PrivateTmp=true
+          NoNewPrivileges=true
+
+          [Install]
+          WantedBy=multi-user.target
+      register: tunnel_e2e_unit
+
+    - name: Start the test page
+      ansible.builtin.systemd_service:
+        name: tunnel-e2e-page.service
+        state: "{{ 'restarted' if tunnel_e2e_unit is changed else 'started' }}"
+        enabled: true
+        daemon_reload: "{{ tunnel_e2e_unit is changed }}"
+
+    - name: The test page answers on loopback
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8000/
+        return_content: true
+      register: tunnel_e2e_page
+      until: tunnel_e2e_page is succeeded and tunnel_e2e_marker in tunnel_e2e_page.content
+      retries: 10
+      delay: 2

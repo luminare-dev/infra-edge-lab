@@ -1,0 +1,79 @@
+# End-to-end test of the tunnel (docs/adr/0024): "task e2e:tunnel" (scripts/e2e_tunnel.sh) creates
+# the demo environment with its host as a systemd container on the runner's Docker daemon, a real
+# tunnel demo-e2e with demo-web and demo-ssh behind Access, configures the host with site.yml,
+# checks both hostnames from outside through Cloudflare and always destroys everything again,
+# then sweeps every demo-* object created during the run and compares the rest of the zone with
+# its state before the run. No cloud server is created.
+#
+# Off until the repository variable CLOUD_ENVS_ENABLED is "true". It runs on pushes to main, every
+# night and on demand, never for a pull request. Its GitHub environment demo-e2e (no reviewer,
+# deployment branch main only) holds only the SOPS_AGE_KEY of secrets/demo-e2e.enc.env: a Cloudflare
+# token for the zone and the account, without any cloud server token. It shares its concurrency
+# group with the apply of demo, which uses the same names; a run is never cancelled. The last step
+# runs also after a failure, a timeout or a cancellation: it removes the containers and sweeps.
+name: e2e-tunnel
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 2 * * *"   # every night at 02:41 UTC, before the drift check
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cloud-demo
+  cancel-in-progress: false
+
+jobs:
+  e2e-tunnel:
+    name: e2e-tunnel
+    if: vars.CLOUD_ENVS_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    environment: demo-e2e
+    permissions:
+      contents: read
+    env:
+      # go-task and SOPS, pinned like every downloaded binary (docs/toolchain.md).
+      TASK_VERSION: 3.54.0
+      TASK_SHA256: 680859dbb4d881a9c72d4d9a8f510825450849af8567deacd7302c01124416fb
+      SOPS_VERSION: 3.13.3
+      SOPS_SHA256: e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
+      SECRETS: secrets/demo-e2e.enc.env
+      PY_COLORS: "0"
+      ANSIBLE_NOCOLOR: "1"
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install OpenTofu, go-task and SOPS (sha256-pinned)
+        run: |
+          set -euo pipefail
+          bash scripts/install_tofu_tools.sh "$RUNNER_TEMP/tools" tofu
+          archive="$RUNNER_TEMP/task_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 -o "$archive" \
+            "https://github.com/go-task/task/releases/download/v${TASK_VERSION}/task_linux_amd64.tar.gz"
+          echo "${TASK_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP/tools" task
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/tools/sops" \
+            "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64"
+          echo "${SOPS_SHA256}  $RUNNER_TEMP/tools/sops" | sha256sum -c -
+          chmod 0755 "$RUNNER_TEMP/tools/sops"
+          echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
+
+      - name: task e2e:tunnel
+        timeout-minutes: 60
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: task e2e:tunnel
+
+      - name: Remove the containers and sweep after an interrupted run
+        if: always()
+        timeout-minutes: 15
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: bash scripts/e2e_tunnel.sh cleanup

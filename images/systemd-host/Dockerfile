@@ -27,7 +27,10 @@ ENV container=docker \
 # find no interface to wait for and hold every unit ordered after network-online.target (Docker,
 # node_exporter) for two minutes before it fails. The base images' /usr/sbin/policy-rc.d, which
 # stops packages from starting their services, is removed: a package installed by a role starts
-# its service as it does on a virtual machine.
+# its service as it does on a virtual machine. The package lists stay in the image: the roles
+# refresh them only when they are older than an hour (apt's cache_valid_time), and apt judges
+# that by the time the lists folder changed, so a folder emptied at build time would look fresh
+# and leave a freshly built host with no package lists at all.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -38,7 +41,6 @@ RUN apt-get update \
         systemd \
         systemd-sysv \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/machine-id /var/lib/dbus/machine-id /usr/sbin/policy-rc.d \
     && systemctl mask getty.target console-getty.service systemd-firstboot.service \
         systemd-udevd.service systemd-udev-trigger.service systemd-modules-load.service \

@@ -1,0 +1,6 @@
+# Values for the database of the demo environment, on its one host: MariaDB on loopback only (no
+# other host needs it, so the firewall gets no drop-in), with a buffer pool sized for a small host
+# instead of a quarter of the memory that a container sees, which is the whole machine's.
+
+mariadb_bind_address: 127.0.0.1
+mariadb_innodb_buffer_pool_size: 256M

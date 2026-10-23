@@ -158,11 +158,39 @@ read its journal (`docker exec lab-local-<host> journalctl -u <service>`).
 **Cause:** the base role's firewall starts with `flush ruleset`, which also removes the NAT rules
 through which a container reaches Docker's DNS server, and the drop-in
 `/etc/nftables.d/05-local-container-dns.nft` that puts them back is missing (the playbook ran
-without `playbooks/local_prepare.yml`).
+without `playbooks/local_prepare.yml`, which imports `playbooks/container_dns.yml`).
 
 **Fix:** run `task configure ENV=local`, which runs `local_prepare.yml` first, or run that
 playbook and then `systemctl restart nftables` in the container
 ([ADR 0022](adr/0022-an-end-to-end-run-of-the-local-environment-on-every-pull-request.md)).
+
+## `task e2e:tunnel`: `... is left from an earlier run` or `containers named lab-e2e-demo-* exist already`
+
+**Cause:** an earlier run was interrupted before its own clean-up, or its sweep failed; its work
+folder (or only its start time) and possibly its container and Cloudflare objects are still there.
+
+**Fix:** `bash scripts/e2e_tunnel.sh cleanup` with the same credentials: it removes the
+containers named `lab-e2e-demo-*` and sweeps the demo objects created since that run started,
+then deletes the folder. Then start the test again.
+
+## `preflight: refused: the token cannot read what ... grants`
+
+**Cause:** the Cloudflare token lacks a permission that the environment needs (the line names it),
+or the token is for another account. A read shows only the read half of each permission; the
+edit permissions show up at the first write.
+
+**Fix:** edit the token in the Cloudflare dashboard (My Profile, API Tokens) to hold the
+permissions that `task preflight ENV=<env>` prints, for the one zone and the one account, and put
+it into the environment's SOPS file.
+
+## `dns_backup.sh: no recipient`
+
+**Cause:** none of `DNS_BACKUP_RECIPIENTS`, `DNS_BACKUP_RECIPIENTS_FILE` or an age key in
+`SOPS_AGE_KEY_FILE` or `~/.config/sops/age/keys.txt` is there, so the zone copy could be
+encrypted for nobody. Nothing was exported.
+
+**Fix:** keep the operator's age key where SOPS expects it, or set `DNS_BACKUP_RECIPIENTS` to the
+public keys that may read the copy (`age-keygen -y <key file>` prints one).
 
 ## Molecule: a scenario stops for about two minutes when it starts Docker or node_exporter
 

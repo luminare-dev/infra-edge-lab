@@ -95,7 +95,7 @@ run "every_hostname_is_behind_access" {
 
   assert {
     condition = { for r in output.ingress : r.hostname => [r.service, r.access_required] } == {
-      "demo-web.example.com" = ["http://localhost:80", true]
+      "demo-web.example.com" = ["http://127.0.0.1:8080", true]
       "demo-ssh.example.com" = ["ssh://localhost:22", false]
     }
     error_message = "demo-web should require an Access token at cloudflared, and demo-ssh should go to the local SSH server."

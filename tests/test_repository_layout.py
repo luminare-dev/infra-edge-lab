@@ -65,6 +65,8 @@ class GitignoreTest(unittest.TestCase):
         "group_vars/all.dec.yaml",
         ".task/checksum/venv",
         ".venv/bin/python",
+        "backups/dns/20261022T103000Z.zone.age",
+        "ansible/inventories/demo/.generated/restic_password",
     )
     KEPT = (
         "tofu/envs/lab/main.tf",
@@ -80,6 +82,8 @@ class GitignoreTest(unittest.TestCase):
         ".sops.yaml",
         "secrets/lab.enc.env",
         "secrets/lab-ci.enc.env",
+        "secrets/demo-e2e.enc.env",
+        "ansible/inventories/demo/group_vars/all.yml",
         "secrets/README.md",
         "secrets/env.example",
     )

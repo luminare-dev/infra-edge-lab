@@ -14,7 +14,10 @@ x86_64 with the versions in [toolchain.md](toolchain.md); the Python part was al
 | OpenTofu, gitleaks, actionlint | as in [toolchain.md](toolchain.md) | needed by `task lint` |
 | OpenTofu, TFLint, Trivy | as in [toolchain.md](toolchain.md) | needed by `task tofu` (Trivy for its `iac` step); on Linux x86_64, `bash scripts/install_tofu_tools.sh ~/.local/bin tofu tflint trivy` installs them after checking their sha256 |
 | Docker Engine | allows privileged containers | needed by the `integration` step of `task tofu` (the `docker_host` module boots containers with systemd), by `task molecule` (the role scenarios) and by the `local` environment (`task e2e:local`, `task up ENV=local`); about 2 GB of free memory for the docker and monitoring scenarios and for the monitoring host of `local`, which keep Docker's storage inside the container on tmpfs |
-| OpenSSH client | any current version | `ssh-keygen` creates the throwaway key of the `local` environment |
+| OpenSSH client | any current version | `ssh-keygen` creates the throwaway key of the `local` environment and of `task e2e:tunnel`, whose SSH check also needs `ssh` |
+| SOPS, age | as in [toolchain.md](toolchain.md) | read the encrypted files in `secrets/`; `task dns-backup` encrypts the zone copy with age |
+| curl | any current version | `task e2e:tunnel` checks `demo-web` with it and downloads the pinned cloudflared |
+| cloudflared | as in [toolchain.md](toolchain.md) | on the PATH for `task configure` and `task smoke` of a cloud server in `demo` or `showcase`, which Ansible reaches through the tunnel with `cloudflared access ssh` |
 | Node.js | 24.22.0 | runs markdownlint-cli2 in `task lint` |
 
 Install every binary only after its sha256 matches the value in [toolchain.md](toolchain.md).

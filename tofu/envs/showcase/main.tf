@@ -36,11 +36,12 @@ locals {
     }
   }
 
-  # The connector runs on the server, so its own origins are on localhost. The tunnel module
+  # The connector runs on the server, so its own origins are on localhost; the web origin is the
+  # loopback listener of the nginx role's sites (127.0.0.1:8080, as in demo). The tunnel module
   # appends the catch-all rule.
   ingress = concat(
     [
-      { hostname = "show-web.${var.zone}", service = "http://localhost:80" },
+      { hostname = "show-web.${var.zone}", service = "http://127.0.0.1:8080" },
       { hostname = "show-ssh.${var.zone}", service = "ssh://localhost:22" },
     ],
     local.game_server ? [

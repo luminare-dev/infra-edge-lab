@@ -20,14 +20,19 @@ The options below change how the tasks, checks and tests run.
 | `GITHUB_REPOSITORY` (environment variable) | `owner/name` | the `origin` remote | Repository name for the name check of `scripts/forbidden_words.py`; set it when the clone has no `origin` remote. |
 | `STEPS` (Taskfile variable, `task tofu STEPS='fmt test'`) | list of steps | `all` | Steps of `scripts/check_tofu.sh`: `fmt`, `validate`, `tflint`, `iac` (Trivy), `test`, `integration` (needs Docker), `compat`, or `all`. |
 | `TF_PLUGIN_CACHE_DIR` (environment variable) | path | unset; `$RUNNER_TEMP/tofu-plugin-cache` in CI | Shared provider cache for `scripts/check_tofu.sh`; the providers are still checked against each lock file. |
-| `ENV` (Taskfile variable, `task init ENV=lab`) | `local`, `lab`, `demo` or `showcase` | none; required by `init`, `plan`, `up`, `inventory`, `configure`, `smoke`, `restore-test`, `destroy` and `rebuild` | Environment under `tofu/envs/` and `ansible/inventories/` (`task test` without `ENV` runs the unit tests). `task destroy` and `task rebuild` refuse `showcase`. |
+| `ENV` (Taskfile variable, `task init ENV=lab`) | `local`, `lab`, `demo` or `showcase` | none; required by `init`, `plan`, `up`, `inventory`, `configure`, `smoke`, `restore-test`, `destroy`, `rebuild`, `preflight` and `dns-backup` | Environment under `tofu/envs/` and `ansible/inventories/` (`task test` without `ENV` runs the unit tests). `task destroy` and `task rebuild` refuse `showcase`; `task preflight` and `task dns-backup` take `lab`, `demo` or `showcase` (for `dns-backup` it selects the credentials only). |
 | `BACKUP_NOW` (Taskfile variable, `task restore-test ENV=local BACKUP_NOW=1`) | any value or unset | unset | Takes the database dumps and a backup on every host before the restore test; unset, the test checks the newest nightly backup. |
 | `AUTO_APPROVE` (environment variable, `AUTO_APPROVE=1 task up ENV=demo`) | `1` or unset | unset | Applies and destroys `lab`, `demo` or `showcase` without OpenTofu asking first; `local` never asks. |
 | `TUNNEL_TOKEN` (environment variable) | string | unset | Token of the tunnel for `task configure` of `lab`, `demo` or `showcase`; when unset, the task fetches it for the `tunnel_id` output with `CLOUDFLARE_API_TOKEN` and `TF_VAR_account_id` from the SOPS file (`scripts/tunnel_token.py`). Always cleared for `local`. |
 | `ANSIBLE_COLLECTIONS_PATH` (environment variable) | path | unset: `ansible/collections` (ansible.cfg) | Where the playbooks find the collections. `task e2e:local` installs `ansible/requirements.yml` only when it is unset; set it to a folder with collections installed from local checkouts to test those. |
 | `E2E_LOG_DIR` (environment variable) | path | a temporary folder, removed at the end | Folder where `task e2e:local` keeps the output of both playbook runs. |
 | `BACKEND` (Taskfile variable, `task init ENV=lab BACKEND=local`) | `remote` or `local` | `remote` | `local` keeps the state of `lab`, `demo` or `showcase` in a local file (still encrypted) through a git-ignored `backend_override.tf`; `remote` removes that file again. |
-| `SECRETS` (environment variable) | path | `secrets/<env>.enc.env` | SOPS file that `task init` and `task plan` read with `sops exec-env` when it exists, for example `secrets/lab-ci.enc.env` for a read-only plan. |
+| `SECRETS` (environment variable) | path | `secrets/<env>.enc.env`; `secrets/demo-e2e.enc.env` for `task e2e:tunnel` | SOPS file that `task init`, `task plan`, `task preflight`, `task dns-backup`, `task sweep:demo` and `task e2e:tunnel` read with `sops exec-env` when it exists, for example `secrets/lab-ci.enc.env` for a read-only plan. Without the file the values come from the caller's environment. |
+| `DNS_BACKUP_RECIPIENTS`, `DNS_BACKUP_RECIPIENTS_FILE` (environment variables) | age public keys separated by spaces, or a file of them | unset: the public key of `SOPS_AGE_KEY_FILE` or `~/.config/sops/age/keys.txt` | Who can decrypt the zone copy of `task dns-backup`. With the default the copy is decrypted once to prove that the key reads it. |
+| `DNS_BACKUP_DIR` (environment variable) | path | `backups/dns` (git-ignored) | Folder of the zone copies (mode 0700, files 0600). |
+| `E2E_TUNNEL_DIR` (environment variable) | path | `infra-edge-lab-e2e-tunnel` in `RUNNER_TEMP` or `TMPDIR` | Work folder of `task e2e:tunnel` (the copy of the environment, its state, logs and the throwaway key); removed at the end. A folder left by an interrupted run blocks the next run until `bash scripts/e2e_tunnel.sh cleanup`. |
+| `CLOUDFLARED` (environment variable) | path | unset: the pinned release is downloaded and checked by sha256 | `cloudflared` binary for the SSH check of `task e2e:tunnel` (needed on a control node that is not Linux x86_64). |
+| `CLOUD_ENVS_ENABLED` (repository variable) | `true` or unset | unset | Turns on the workflows `plan`, `apply`, `drift` and `e2e-tunnel`; unset, every job of them is skipped ([runbook](runbook.md#procedure-turn-on-the-cloud-workflows)). |
 | `TF_VAR_state_passphrase` (environment variable) | string, at least 16 characters | none; required | Passphrase of the state and plan encryption ([ADR 0013](adr/0013-encrypted-state-in-r2-with-a-lock-file.md)); from the SOPS file, or a random one per run for `local`. |
 | Arguments after `--` (`task plan ENV=lab -- -out=lab.tfplan`) | OpenTofu or ansible-playbook arguments | none | Passed on to `tofu init` or `tofu plan`, and with `task configure`, `task smoke`, `task restore-test`, `task up` and `task rebuild` to `ansible-playbook` (for example `-- --diff`). |
 | `ROLE` (Taskfile variable, `task molecule ROLE=docker`) | `docker`, `monitoring` or `deploy_target` | none; required by `molecule` | Role under `ansible/roles/` whose Molecule scenario `task molecule` runs. |
@@ -46,6 +51,7 @@ with `task configure ENV=<env>`. Its inventory is `ansible/inventories/<env>/`: 
 | groups `edge`, `db`, `fxserver`, `monitoring`, `docker_hosts` | `hosts.yml` (from the `groups` of each host in OpenTofu) | Which roles a host gets: `edge` the tunnel connector and nginx, `db` MariaDB, `fxserver` the game server, txAdmin and the deploy target, `monitoring` Docker with Uptime Kuma, Prometheus and the observability pack, `docker_hosts` Docker. Every host gets the base hardening, node_exporter and the backups. |
 | `ansible_host`, `ansible_connection` | `hosts.yml` | What Ansible connects to and how: a container name with `community.docker.docker` in `local`, an address or the SSH hostname with `ansible.builtin.ssh` elsewhere. |
 | `host_ip` | `hosts.yml` | The host's address in the environment's network; the `group_vars` of `local` use it for listen addresses and firewall sources between the hosts. |
+| `ansible_user`, `ansible_ssh_common_args` | `hosts.yml`, for a cloud server of `demo` or `showcase` only | The automation user `ansible`, and SSH through the tunnel: `cloudflared access ssh --hostname %h` as ProxyCommand to `<env>-ssh` behind Access, with the host key kept in `.generated/known_hosts` next to the inventory (accepted on the first connection, removed by `task destroy`). `task configure` and `task smoke` put the service token of `demo-ssh` or `show-ssh` from the outputs into `TUNNEL_SERVICE_TOKEN_ID` and `TUNNEL_SERVICE_TOKEN_SECRET` for the run; `cloudflared` must be on the PATH. |
 | `site_prometheus_sha256` | `group_vars` (monitoring) | sha256 of the linux-amd64 archive of `prometheus_version`. Before the `prometheus` role runs, `site.yml` downloads the archive into `prometheus_local_cache_path` on the control node and stops unless it matches; after the role it checks again that the archive the role unpacked is that file. Empty skips both checks. |
 | role variables | `group_vars` | Every variable of the roles below and of the collections' roles. |
 
@@ -58,8 +64,17 @@ each host. Their secrets are never in the files: `local_generated_dir`
 (`ansible/inventories/local/.generated/`, git-ignored) holds passwords that the password lookup
 generates on first use, the throwaway SSH key and the fake build, which
 `playbooks/local_prepare.yml` creates. `task destroy ENV=local` deletes the folder.
-`lab`, `demo` and `showcase` have no `group_vars` at this version: they need their own, with
-their secrets in `*.sops.yaml` files, before `task configure` can run there.
+The `group_vars` of `demo` are those of its one host, a cloud server or the container of
+`task e2e:tunnel`: both users of the base role get the key in `TF_VAR_ssh_public_key`, SSH is
+admitted from the host itself only (the tunnel connector on the host carries `demo-ssh` to
+`ssh://localhost:22`), node_exporter and MariaDB listen on loopback, and the backup repository is
+a folder on the host. Its one secret, the backup password, is generated next to the inventory:
+in `ansible/inventories/demo/.generated/` (git-ignored), or in the work folder of the tunnel test,
+which removes it at the end. `task e2e:tunnel` adds two values of its
+own: the nginx site of `demo-web` on `127.0.0.1:8080` in front of its test page, and the marker
+of the run (`playbooks/tunnel_e2e_prepare.yml`). `lab` and `showcase` have no `group_vars` at this
+version: they need their own, with their secrets in `*.sops.yaml` files, before
+`task configure` can run there.
 
 ## Roles
 
@@ -162,6 +177,7 @@ hold:
 | `CLOUDFLARE_API_TOKEN`, `TF_VAR_account_id`, `TF_VAR_zone_id` | cloudflare/cloudflare provider; `task configure` (the tunnel token) | token limited to one zone; reading the tunnel token needs tunnel write permission |
 | `TF_VAR_zone`, `TF_VAR_access_team_name`, `TF_VAR_allowed_emails` | `lab`, `demo`, `showcase` | the zone, the Zero Trust team name and who may log in (JSON list) |
 | `TF_VAR_ssh_keys`, `TF_VAR_ssh_public_key` | `lab` (JSON list), `demo` and `showcase` (one key line) | public keys of the admin user |
+| `SSH_PRIVATE_KEY_B64` | `task configure` and `task smoke` of `demo` and `showcase` (the `apply` workflow) | the private key of `TF_VAR_ssh_public_key` as one line of base64 (`base64 -w0 <key file>`), written to a private temporary file for the run; only in `secrets/<env>.enc.env` of the environments that the `apply` workflow configures. A workstation uses the operator's own key instead |
 | `HCLOUD_TOKEN` | hetznercloud/hcloud provider | token of a project that holds nothing but this lab |
 | `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | S3-compatible state backend | the account's endpoint (`https://<account_id>.r2.cloudflarestorage.com`) and a token for the state bucket only |
 | `TF_VAR_state_passphrase` | state and plan encryption | at least 16 characters; kept offline as well, since a lost passphrase means a lost state |

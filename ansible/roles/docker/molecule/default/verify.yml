@@ -1,6 +1,6 @@
 # Checks of the docker role: packages, daemon settings, the drop-ins, a container whose published
 # port must bind to 127.0.0.1 only, the forward rules with the firewall loaded, the restart of
-# Docker by nftables.service, and the refusals of the role's checks.
+# Docker by nftables.service (also six times within a minute), and the refusals of the role's checks.
 - name: Verify
   hosts: all
   gather_facts: true
@@ -69,12 +69,14 @@
         name: docker.service
       register: docker_unit
 
-    - name: Docker is enabled and is part of nftables.service
+    - name: Docker is enabled, part of nftables.service and allowed 10 starts a minute
       ansible.builtin.assert:
         that:
           - docker_unit.status.UnitFileState == 'enabled'
           - "'nftables.service' in docker_unit.status.PartOf.split()"
           - "'nftables.service' in docker_unit.status.After.split()"
+          - docker_unit.status.StartLimitBurst == '10'
+          - docker_unit.status.StartLimitIntervalUSec in ['1min', '60000000']
         quiet: true
 
     - name: Read the forward rules
@@ -224,6 +226,35 @@
           - docker_ruleset.stdout is search('table ip nat')
           - docker_http_after.content == docker_http.content
         quiet: true
+
+    # Several roles of one playbook run can each reload the firewall within a minute; with
+    # Docker's own limit of 3 starts in 60 seconds, systemd would leave Docker stopped. Together
+    # with the two restarts above, these four make six starts of Docker within a minute. The
+    # pause keeps nftables.service itself below systemd's default limit of 5 starts in 10 seconds.
+    - name: Restart nftables.service four more times within a minute, as a playbook run with several drop-ins can
+      ansible.builtin.systemd_service:
+        name: nftables.service
+        state: restarted
+      loop: [1, 2, 3, 4]
+      loop_control:
+        pause: 3
+
+    - name: Read the state of Docker after the restarts
+      ansible.builtin.systemd_service:
+        name: docker.service
+      register: docker_after_burst
+      until: docker_after_burst.status.ActiveState == 'active'
+      retries: 15
+      delay: 2
+
+    - name: The container answers after the restarts
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/hostname
+        return_content: true
+      register: docker_http_burst
+      until: docker_http_burst is succeeded
+      retries: 15
+      delay: 2
 
     - name: Remove the test container
       ansible.builtin.command:

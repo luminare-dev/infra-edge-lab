@@ -1,0 +1,40 @@
+# Values for the game server host of the local environment (fx-01). The server build is the fake
+# build of tests/fake-artifact/ (a stand-in that answers the game server's HTTP endpoints, not the
+# real server): playbooks/local_prepare.yml builds it on the control node, copies it to the host
+# and writes its sha256 next to it in .generated/. No real server build is ever downloaded here.
+fxserver_build: 35245
+fxserver_artifact_url: "file:///opt/fake-artifact/{{ fxserver_build }}/fx.tar.xz"
+fxserver_artifact_sha256: >-
+  {{ lookup('ansible.builtin.file', local_generated_dir ~ '/fake-artifact/' ~ fxserver_build ~ '/fx.tar.xz.sha256') }}
+# The fake build accepts any key of letters and digits; it is never a real license key.
+fxserver_license_key: >-
+  {{ lookup('ansible.builtin.password', local_generated_dir ~ '/license_key',
+            length=32, chars=local_password_chars) }}
+
+# txAdmin starts the game server (luminare.gameserver.txadmin); its web port 40120 stays closed
+# except for loopback and the edge host, which runs the tunnel connector in the lab.
+fxserver_mode: txadmin
+fxserver_cfg:
+  hostname: Local test server
+  project_name: Local test server
+  project_desc: Game server of the local test environment.
+  max_clients: 32
+fxserver_backup_timer_enabled: true
+# The build number and switch time for node_exporter's textfile collector (monitoring role).
+fxserver_textfile_dir: /var/lib/node_exporter/textfile
+
+txadmin_max_slots: 32
+txadmin_firewall_sources: "{{ groups['edge'] | map('extract', hostvars, 'host_ip') | list }}"
+txadmin_api_token: >-
+  {{ lookup('ansible.builtin.password', local_generated_dir ~ '/txadmin_api_token',
+            length=32, chars=local_password_chars) }}
+# The observability toggle: /perf/ needs basic auth, with the password that Prometheus uses.
+txadmin_prometheus_basic_auth:
+  enabled: true
+  user: prometheus
+  password: "{{ local_perf_password }}"
+
+# deploy_target: the upload account and the path unit, with the test stand-in of the role's
+# Molecule scenario as deploy script (this repository ships no deploy script; it only checks the
+# checksum of an upload and deletes it). No upload key: nothing uploads here.
+deploy_target_script_src: "{{ playbook_dir }}/../roles/deploy_target/molecule/default/files/deploy-stub"

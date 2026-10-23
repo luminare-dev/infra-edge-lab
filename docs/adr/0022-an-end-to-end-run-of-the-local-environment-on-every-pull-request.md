@@ -54,8 +54,9 @@ Chosen option: 1, because it needs nothing but Docker and runs on fork pull requ
   an empty state file of a destroyed run blocked the next run.
 - Bad: containers are not virtual machines (kernel, boot, real interfaces), the fake build is not
   the real server, and there is no tunnel; those checks stay for real environments.
-- Bad: the workflow needs the collection repositories to be public and tagged; until then it
-  fails at the collection step, and locally the collections come from checkouts through
-  `ANSIBLE_COLLECTIONS_PATH`.
-- Bad: a run takes about 13 minutes on a workstation (two runs: 768 s and 767 s), most of it the
-  two playbook runs.
+- Bad: the workflow needs GitHub and Ansible Galaxy at the collection step; the collection
+  repositories are public and tagged (since 2026-10-22), and a change of a collection can be
+  tried before its release only on a workstation, through `ANSIBLE_COLLECTIONS_PATH`.
+- Bad: a run takes about 13 minutes on a workstation (810 s with the tagged collections and the
+  restore test on 2026-10-22; 767 to 811 s in earlier runs without it), most of it the two
+  playbook runs.

@@ -1,5 +1,5 @@
 """Repository conventions of infra-edge-lab: layout, ignored files, secrets folder, Dependabot,
-the shared test command and the ADR list in the README.
+the shared test command, the collection tags and the ADR list in the README.
 
 Standard library only, like the template's tests, so they run on any python3 >= 3.10.
 """
@@ -223,6 +223,52 @@ class PreCommitTest(unittest.TestCase):
         self.assertIn("sops filestatus", text)
         self.assertIn(r"files: ^secrets/.*\.enc\.env$", text)
         self.assertRegex(text, r"(?m)^      - id: gitleaks-system\n        pass_filenames: false$")
+
+
+def luminare_collections() -> dict[str, tuple[str, str]]:
+    """Name -> (type, version) of the luminare collections in ansible/requirements.yml."""
+    found = {}
+    for block in re.split(r"\n(?=  - name: )", read("ansible/requirements.yml")):
+        name = re.search(r"^  - name: (luminare\.\w+)$", block, re.MULTILINE)
+        if name:
+            kind = re.search(r"^    type: (\S+)$", block, re.MULTILINE)
+            version = re.search(r"^    version: (\S+)$", block, re.MULTILINE)
+            found[name.group(1)] = (kind.group(1) if kind else "", version.group(1) if version else "")
+    return found
+
+
+def readme_component_rows() -> dict[str, list[str]]:
+    """First cell (without backquotes) -> cells of the README's "Supported versions" table."""
+    rows, inside = {}, False
+    for line in read("README.md").splitlines():
+        if line.startswith("| Component |"):
+            inside = True
+            continue
+        if inside:
+            if not line.startswith("|"):
+                break
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            rows[cells[0].strip("`")] = cells
+    return rows
+
+
+class CollectionTagsTest(unittest.TestCase):
+    """The luminare collections come from git tags, and the README names the pinned tags."""
+
+    def test_luminare_collections_are_pinned_to_release_tags(self):
+        collections = luminare_collections()
+        self.assertEqual(sorted(collections), ["luminare.gameserver", "luminare.infra_edge"])
+        for name, (kind, version) in collections.items():
+            with self.subTest(collection=name):
+                self.assertEqual(kind, "git")
+                self.assertRegex(version, r"^v\d+\.\d+\.\d+$")
+
+    def test_readme_names_the_pinned_tags(self):
+        rows = readme_component_rows()
+        for name, (_, version) in luminare_collections().items():
+            with self.subTest(collection=name):
+                self.assertIn(name, rows, "a row of the Supported versions table")
+                self.assertTrue(rows[name][1].startswith(f"`{version}`"), rows[name][1])
 
 
 class AdrListTest(unittest.TestCase):

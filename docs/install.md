@@ -1,8 +1,9 @@
 # Installation
 
-This page sets up a workstation for working on the repository. Tested on 2026-10-21 on Linux
-x86_64 with the versions in [toolchain.md](toolchain.md); the Python part was also tested in the
-`python:3.12-slim` and `python:3.13-slim` containers.
+This page sets up a workstation for working on the repository and for running its environments.
+Tested on 2026-10-21 and 2026-10-22 on Linux x86_64 with the versions in
+[toolchain.md](toolchain.md); the Python part was also tested in the `python:3.12-slim` and
+`python:3.13-slim` containers.
 
 ## Requirements
 
@@ -12,12 +13,13 @@ x86_64 with the versions in [toolchain.md](toolchain.md); the Python part was al
 | Python | 3.12 or 3.13, with the `venv` module | Debian and Ubuntu: package `python3-venv` |
 | go-task | 3.54.0 | runs `task lint`, `task test`, `task tofu`, `task molecule`, `task e2e:local` and the environment tasks |
 | OpenTofu, gitleaks, actionlint | as in [toolchain.md](toolchain.md) | needed by `task lint` |
-| OpenTofu, TFLint, Trivy | as in [toolchain.md](toolchain.md) | needed by `task tofu` (Trivy for its `iac` step); on Linux x86_64, `bash scripts/install_tofu_tools.sh ~/.local/bin tofu tflint trivy` installs them after checking their sha256 |
+| OpenTofu, TFLint, Trivy | as in [toolchain.md](toolchain.md) | needed by `task tofu` (Trivy for its `iac` step), OpenTofu also by `task e2e:local` and the environment tasks; on Linux x86_64, `bash scripts/install_tofu_tools.sh ~/.local/bin tofu tflint trivy` installs them after checking their sha256 |
 | Docker Engine | allows privileged containers | needed by the `integration` step of `task tofu` (the `docker_host` module boots containers with systemd), by `task molecule` (the role scenarios) and by the `local` environment (`task e2e:local`, `task up ENV=local`); about 2 GB of free memory for the docker and monitoring scenarios and for the monitoring host of `local`, which keep Docker's storage inside the container on tmpfs |
 | OpenSSH client | any current version | `ssh-keygen` creates the throwaway key of the `local` environment and of `task e2e:tunnel`, whose SSH check also needs `ssh` |
 | SOPS, age | as in [toolchain.md](toolchain.md) | read the encrypted files in `secrets/`; `task dns-backup` encrypts the zone copy with age |
 | curl | any current version | `task e2e:tunnel` checks `demo-web` with it and downloads the pinned cloudflared |
 | cloudflared | as in [toolchain.md](toolchain.md) | on the PATH for `task configure` and `task smoke` of a cloud server in `demo` or `showcase`, which Ansible reaches through the tunnel with `cloudflared access ssh` |
+| Network access | outbound HTTPS | PyPI (the hash-pinned Python tools), GitHub (the luminare collections and the release downloads of node_exporter and Prometheus), Ansible Galaxy, Docker Hub (base images, Uptime Kuma) and the package mirrors of Debian, Ubuntu and Docker inside the hosts |
 | Node.js | 24.22.0 | runs markdownlint-cli2 in `task lint` |
 
 Install every binary only after its sha256 matches the value in [toolchain.md](toolchain.md).
@@ -37,18 +39,25 @@ task venv
 Molecule use, so the tests need nothing from Ansible Galaxy.
 
 To run the playbooks, install the collections of
-[ansible/requirements.yml](../ansible/requirements.yml) (the luminare collections from their git
-tags, `devsec.hardening` and `prometheus.prometheus` from Ansible Galaxy at exact versions, the
-other community collections from the `ansible` package) into `ansible/collections`:
+[ansible/requirements.yml](../ansible/requirements.yml) into `ansible/collections`:
 
 ```bash
 task collections
 ```
 
-This needs the tagged repositories `luminare-dev/ansible-collection-infra_edge` and
-`luminare-dev/ansible-collection-gameserver` to be reachable; the unit tests and ansible-lint do
-not. [troubleshooting.md](troubleshooting.md) shows how to use collections built from local
-checkouts instead.
+`luminare.infra_edge` and `luminare.gameserver` are cloned from their public GitHub repositories
+(`luminare-dev/ansible-collection-infra_edge`, `luminare-dev/ansible-collection-gameserver`) at
+the release tags pinned in that file; `devsec.hardening` and `prometheus.prometheus` come from
+Ansible Galaxy at exact versions, and the other community collections from the `ansible` package
+of the virtual environment. `task e2e:local` runs the same install itself. The unit tests and
+ansible-lint need none of them.
+
+## Keys for the environments with credentials
+
+`local` needs no key and no account. Before working on `lab`, `demo` or `showcase`, create your
+age key and the encrypted files of the environment as described in
+[configuration.md](configuration.md#secrets); for `lab`, also the Proxmox VE users of the
+[runbook](runbook.md#procedure-set-up-the-proxmox-ve-users-of-the-lab).
 
 ## Verify the release download
 
@@ -90,7 +99,8 @@ task e2e:local
 
 It creates `edge-01`, `db-01` and `fx-01` as containers, configures them twice with
 `ansible/playbooks/site.yml` (the second run must change nothing), plans again (no changes),
-smoke-tests them and destroys them, and ends with a table of its steps and their times
+smoke-tests them, backs each one up and tests the restore, destroys them, and ends with a table
+of its steps and their times
 (`Result: passed`). To keep the environment for a look inside, build it step by step instead,
 with one passphrase for the whole session:
 

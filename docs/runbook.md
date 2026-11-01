@@ -1,19 +1,7 @@
 # Runbook
 
-The failures and procedures below are those of the repository's own checks, of the OpenTofu
-checks (CI job `tofu`, `task tofu`) and of the environments' state
-([ADR 0013](adr/0013-encrypted-state-in-r2-with-a-lock-file.md)), then of building, rebuilding,
-restoring and reaching an environment (`task up`, `task rebuild`, `task e2e:local`, the restore
-test, a lock-out, the tunnel), of the cloud workflows and the shared zone
-([ADR 0023](adr/0023-gated-cloud-workflows-with-read-only-plans-and-reviewed-applies.md),
-[ADR 0024](adr/0024-a-tunnel-test-guarded-by-a-zone-preflight-a-comparison-and-a-sweeper.md)),
-followed by the services that the roles in `ansible/roles` set up on a host: Docker,
-node_exporter, Uptime Kuma and the deploy target. The services of the collections' roles have
-runbooks in their own repositories.
-
-The procedures for `local` were run on 2026-10-22; those that need a hypervisor, a cloud account
-or a tunnel are written from the documentation of the tools and have not been run (see the
-README's limitations).
+Failures and procedures for the repository's checks, the environments, the cloud workflows and
+the services of the roles in `ansible/roles`. The collections have runbooks of their own.
 
 | Situation | Go to |
 |---|---|
@@ -52,17 +40,17 @@ README's limitations).
 | **Impact** | The update waits; the current pins stay in use. |
 | **Diagnosis** | Open the failed job; compare the release notes of the updated dependency. A version copied into the docs is not the cause: `tests/test_toolchain.py` keeps the Python versions in the requirements files only. |
 | **Mitigation** | Leave the pull request open or close it; Dependabot proposes the next version later. |
-| **Fix** | Adapt the code in the same pull request, or pin around the broken version with a comment that names the issue. An update of the `ansible` package always needs one edit: set the community collections in `ansible/requirements.yml` to the versions the new package bundles; `tests/test_ansible.py` names each one ([ADR 0016](adr/0016-collections-from-git-tags-and-one-pinned-bundle.md)). |
+| **Fix** | Adapt the code in the same pull request, or pin around the broken version with a comment that names the issue. An update of the `ansible` package always needs one edit: set the community collections in `ansible/requirements.yml` to the versions the new package bundles; `tests/test_ansible.py` names each one. |
 
 ## Failure: the zone guard rejects a name or a record
 
 | | |
 |---|---|
 | **Meaning** | `tofu test` or `tofu plan` fails with a validation error of `cf_tunnel` or `cf_access_app`, for example "Every dns_names entry must be a first-level label with the prefix of env". |
-| **Impact** | Nothing reaches Cloudflare: the plan stops before any API call. This is the guard working ([ADR 0009](adr/0009-guard-rails-for-a-shared-dns-zone.md)). |
+| **Impact** | Nothing reaches Cloudflare: the plan stops before any API call. This is the guard working. |
 | **Diagnosis** | The error names the variable. Compare the name with the rules in the [cf_tunnel README](../tofu/modules/cf_tunnel/README.md#name-rules): prefix of the environment, first level only, lower case, not reserved; A/AAAA records in `showcase` only. |
 | **Mitigation** | Use a name with the environment's prefix (`lab-`, `demo-`, `show-`). |
-| **Fix** | Change the name, never the guard. A change of the rules themselves needs a new ADR and new tests in both modules. |
+| **Fix** | Change the name, never the guard. A change of the rules themselves needs new tests in both modules. |
 
 ## Failure: `tofu init` reports that a provider does not match the lock file
 
@@ -108,8 +96,7 @@ README's limitations).
 
 The state records which key provider encrypted it, so the passphrase changes in two runs with a
 temporary second key provider, `next`, given in the `TF_ENCRYPTION` environment variable (which
-OpenTofu merges with `encryption.tofu`); nothing is committed. Tested on 2026-10-21 with OpenTofu
-1.13.1 on a local state file.
+OpenTofu merges with `encryption.tofu`); nothing is committed.
 
 1. With the old passphrase in `TF_VAR_state_passphrase`, set `TF_ENCRYPTION` to a
    `key_provider "pbkdf2" "next"` with the new passphrase, a `method "aes_gcm" "next"` with
@@ -133,7 +120,7 @@ OpenTofu merges with `encryption.tofu`); nothing is committed. Tested on 2026-10
 | **Impact** | The run changes nothing. Another run holds the lock, or a run was killed while holding it. |
 | **Diagnosis** | The message names who took the lock and when. Check for another terminal, a CI job or an `apply` waiting at its approval prompt. |
 | **Mitigation** | Wait for the other run to end. |
-| **Fix** | Only when no run is active: `tofu -chdir=tofu/envs/<env> force-unlock <lock ID>`. Whether R2 enforces the lock is not tested yet (see the README's limitations); until it is, only one operator applies at a time. |
+| **Fix** | Only when no run is active: `tofu -chdir=tofu/envs/<env> force-unlock <lock ID>`. Whether R2 enforces the lock is not tested yet; until it is, only one operator applies at a time. |
 
 ## Failure: an environment plans against the wrong state
 
@@ -148,51 +135,27 @@ OpenTofu merges with `encryption.tofu`); nothing is committed. Tested on 2026-10
 ## Procedure: rebuild an environment from nothing
 
 1. For `lab` and `demo`, have an age key for the zone copy: `task up` runs `task preflight` and
-   `task dns-backup` before its apply (the operational safety net of
-   [ADR 0009](adr/0009-guard-rails-for-a-shared-dns-zone.md)), and stops if either fails.
+   `task dns-backup` before its apply and stops if either fails.
 2. Install the collections once: `task collections` (again after a change of their tags, see
    [upgrade.md](upgrade.md#the-pinned-collections)).
 3. `task rebuild ENV=<env>`: destroy, then init, apply, inventory, configure and smoke; it prints
    how long it took. `lab` and `demo` ask before the destroy and the apply unless
    `AUTO_APPROVE=1`; `local` needs `TF_VAR_state_passphrase` (a new random one when nothing of
-   it exists). `showcase` is refused: it is taken down by hand only
-   ([ADR 0014](adr/0014-one-root-module-per-environment.md)).
+   it exists). `showcase` is refused: it is taken down by hand only.
 4. Read the smoke test at the end: every nginx site 200, MariaDB `SELECT 1`, `/info.json` with
    the build, every Prometheus target up.
 
 `task e2e:local` does the same for `local` with a random passphrase, runs the playbook twice,
-plans again, backs up and restore-tests every host, and always destroys at the end
-([ADR 0022](adr/0022-an-end-to-end-run-of-the-local-environment-on-every-pull-request.md)); on
-2026-10-22 it took 810 s on a workstation, most of it the two playbook runs.
+plans again, backs up and restore-tests every host, and always destroys at the end (about 15 minutes).
 
-The GIF at the top of the README is that run (`docs/media/e2e-local.cast` holds the recording),
-made with asciinema 3.2.1 and agg 1.9.0 (Linux x86_64 release files, checked against GitHub's
-asset digests). The recording shows only the lines that tell the steps apart; spaces are squeezed
-so that the play recaps fit 100 columns:
-
-```bash
-cat > /tmp/e2e-local-shown.sh <<'EOF'
-set -euo pipefail
-printf '$ task e2e:local   (shown: steps, OpenTofu results, play recaps, Prometheus targets, summary)\n'
-task e2e:local 2>&1 \
-  | grep --line-buffered -E '^=== |^(Apply|Destroy) complete|^tofu plan: no changes|hosts\.yml written|was installed successfully|^PLAY RECAP|^[a-z0-9-]+ +: ok=|targets up:|^## e2e:local|^\| |^Result:' \
-  | sed -u -E 's/  +/ /g'
-EOF
-asciinema rec --headless --window-size 100x30 --idle-time-limit 2 --title "task e2e:local" \
-  --command "bash /tmp/e2e-local-shown.sh" e2e-local.cast
-agg --font-family "DejaVu Sans Mono" --font-size 14 --idle-time-limit 2 --last-frame-duration 8 \
-  e2e-local.cast e2e-local.gif
-```
-
-Before committing a new recording, delete the `command` field of the first line of the cast
-(it holds the local command line) and look at the last frame: it must show no host name of a
-real machine, no address and no secret.
+The GIF at the top of the README is an asciinema recording of that run (`docs/media/e2e-local.cast`,
+converted with agg). Before committing a new one, remove the `command` field of the cast's first
+line and check that no real host name, address or secret is visible.
 
 ## Procedure: test a restore
 
 Every host backs up `/etc` and `/var/backups` (the database dumps and the game server backups)
-with restic every night at 03:45, after the database dumps at 03:15
-([ADR 0027](adr/0027-restic-for-the-backups-of-every-host.md)). A backup counts only once a
+with restic every night at 03:45, after the database dumps at 03:15. A backup counts only once a
 restore has worked.
 
 1. Run `task restore-test ENV=<env>` (`ansible/playbooks/restore_test.yml`). On every host,
@@ -218,7 +181,7 @@ restic-backup.service`, `journalctl -u restic-backup.service -n 20`, `restic-env
 of the last 24 hours (the recovery point); the restore test fails once the newest snapshot is 26
 hours old. The recovery time is a rebuild of the environment plus the restore of its data: for
 `local`, `task e2e:local` builds and configures the three hosts in about 8 minutes, and the restore
-of each host's snapshot took about a second (README, Results). The repository of `local` and `demo`
+of each host's snapshot takes about a second. The repository of `local` and `demo`
 is a folder on the host itself: the test proves the jobs and the restore, not an off-host copy.
 
 ## Failure: locked out of a host
@@ -253,8 +216,7 @@ is a folder on the host itself: the test proves the jobs and the restore, not an
 
 ## Procedure: set up the Proxmox VE users of the lab
 
-The lab's API tokens get only what the lab needs
-([ADR 0025](adr/0025-proxmox-ve-api-tokens-with-least-privilege.md)). Run once as root on the
+The lab's API tokens get only what the lab needs. Run once as root on the
 Proxmox VE 9 host, after the template (VM ID 9000) exists; `<node>` is the node name
 (`TF_VAR_node_name`). This procedure has not been run for this version: no Proxmox VE host was
 used.
@@ -284,12 +246,12 @@ used.
 
 4. Check: `pveum user permissions tofu@pve` lists the privileges per path, and
    `task plan ENV=lab` with the plan token shows the machines without an error. A `403` in a
-   later apply names the missing privilege: add it to the role and record it in a new ADR.
+   later apply names the missing privilege: add it to the role.
 
 ## Procedure: turn on the cloud workflows
 
 The workflows `plan`, `apply`, `drift` and `e2e-tunnel` are skipped until the repository variable
-`CLOUD_ENVS_ENABLED` is `true` ([ADR 0023](adr/0023-gated-cloud-workflows-with-read-only-plans-and-reviewed-applies.md)).
+`CLOUD_ENVS_ENABLED` is `true`.
 Before setting it (Settings, Secrets and variables, Actions, Variables):
 
 1. Create one age key per GitHub environment (`age-keygen`), keep each private key only in that
@@ -298,7 +260,7 @@ Before setting it (Settings, Secrets and variables, Actions, Variables):
 2. Create the GitHub environments (Settings, Environments):
    - `lab-plan`: no reviewer, any branch; reads `secrets/lab-ci.enc.env`, `secrets/demo-ci.enc.env`
      and `secrets/showcase-ci.enc.env` (read-only tokens, the state passphrase, a read-only R2 key).
-   - `demo` and `showcase`: required reviewer the owner, "Prevent self-reviews" off, branch `main`
+   - `demo` and `showcase`: required reviewer (yourself), "Prevent self-reviews" off, branch `main`
      only; read `secrets/demo.enc.env` or `secrets/showcase.enc.env` (write credentials).
    - `demo-e2e`: no reviewer, branch `main` only; reads `secrets/demo-e2e.enc.env`, which holds a
      Cloudflare token with the permissions that `task preflight ENV=demo` prints (one zone, one
@@ -344,7 +306,7 @@ tunnel named `demo-*` in Cloudflare. `drift` reports them every night.
 | | |
 |---|---|
 | **Meaning** | `task preflight`, `task up`, the `apply` workflow or `task e2e:tunnel` stops with `preflight: refused:`. |
-| **Impact** | Nothing was applied. The guard stopped a write into the shared zone ([ADR 0024](adr/0024-a-tunnel-test-guarded-by-a-zone-preflight-a-comparison-and-a-sweeper.md)). |
+| **Impact** | Nothing was applied. The guard stopped a write into the shared zone. |
 | **Diagnosis** | The line names the reason: a permission that a read cannot show (the token lacks it), `TF_VAR_zone_id does not belong to TF_VAR_zone` (wrong ID in the SOPS file), a record under the prefix without the comment `managed-by-tofu env=<env>` (made by hand), a name the plan would create that exists already (a running or left-over environment), or a plan that would touch a name outside the prefix. |
 | **Mitigation** | Leave the zone as it is. |
 | **Fix** | Correct the token or the IDs in the SOPS file; destroy the running environment or remove left-over demo objects (procedure above); rename or remove a record made by hand only after checking who uses it. Never weaken the check. |
@@ -387,7 +349,7 @@ tunnel named `demo-*` in Cloudflare. `drift` reports them every night.
 | **Impact** | Services in containers (for example Uptime Kuma) cannot check anything; ports published on a private address are unreachable. |
 | **Diagnosis** | `nft list tables` shows no `ip nat` table of Docker; `systemctl show docker -p PartOf` does not list `nftables.service` (the role ran with `docker_restart_with_nftables: false`), or `/etc/nftables.d/60-docker.nft` is missing. `journalctl -u docker` with `Start request repeated too quickly` means more firewall restarts within a minute than `systemctl show docker -p StartLimitBurst` allows (the role's drop-in allows 10). |
 | **Mitigation** | `systemctl restart docker` (with live restore the containers keep running). |
-| **Fix** | Run the docker role with `docker_restart_with_nftables: true` (the default) and with the base role's `/etc/nftables.d` in place, so the drop-ins are written ([ADR 0019](adr/0019-docker-ports-on-loopback-and-a-firewall-that-restarts-docker.md)). |
+| **Fix** | Run the docker role with `docker_restart_with_nftables: true` (the default) and with the base role's `/etc/nftables.d` in place, so the drop-ins are written. |
 
 ## Procedure: create the Uptime Kuma monitors
 
@@ -401,8 +363,7 @@ tunnel named `demo-*` in Cloudflare. `drift` reports them every night.
 4. Stop one watched service for a moment and check that the alert arrives, then that it clears.
 
 Repeat steps 2 and 3 after a change of `monitoring_monitors` or `monitoring_external_probes`; the
-checklist does not track monitors that were changed in the web interface
-([ADR 0018](adr/0018-uptime-kuma-monitors-as-a-checklist.md)).
+checklist does not track monitors that were changed in the web interface.
 
 ## Procedure: upgrade node_exporter or Uptime Kuma
 

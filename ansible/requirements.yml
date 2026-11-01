@@ -3,7 +3,7 @@
 # (into ansible/collections, see ansible.cfg).
 #
 # The luminare collections come from their GitHub repositories at a release tag (type: git), not
-# from Ansible Galaxy (docs/adr/0016). The community collections are pinned to the versions that
+# from Ansible Galaxy. The community collections are pinned to the versions that
 # the "ansible" package in requirements-test.txt bundles, so a run uses the versions that lint and
 # Molecule tested; tests/test_ansible.py keeps them equal.
 collections:

@@ -3,8 +3,7 @@
 A deploy target for a release pipeline: a CI job may drop a release archive into one folder of
 the game server host and nothing else, and the host deploys it once the upload is complete. The
 upload account's SSH keys can only run `rrsync`, write-only, into the spool directory; a systemd
-path unit starts the deploy script as the game server user when an upload is marked complete
-([ADR 0020](../../../docs/adr/0020-upload-only-deploy-key-and-a-path-unit.md)). The deploy
+path unit starts the deploy script as the game server user when an upload is marked complete. The deploy
 script itself belongs to the release pipeline and is not part of this role.
 
 ## Requirements

@@ -1,6 +1,6 @@
 # Uptime Kuma keeps its monitors in its own database and has no supported configuration file or
 # API for them, so the role runs the container and writes the monitors to create by hand into a
-# checklist (docs/adr/0018).
+# checklist.
 - name: Create the Uptime Kuma data volume
   community.docker.docker_volume:
     name: "{{ monitoring_uptime_kuma_data_volume }}"

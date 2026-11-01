@@ -13,7 +13,7 @@
 #   test     tofu test with mocked providers: no backend, no credentials and no passphrase.
 #   apply    tofu apply (it asks before it changes anything unless -auto-approve is given).
 #   destroy  tofu destroy (asks the same way); refused for showcase, the protected long-lived
-#            environment, which is never destroyed from here (docs/adr/0014).
+#            environment, which is never destroyed from here.
 #   output   tofu output (for example "output local -json"), the outputs only on standard output.
 #
 # Credentials and the state passphrase: when secrets/<env>.enc.env exists (or the file named by
@@ -49,7 +49,7 @@ case "$env" in
   *) die "unknown environment '$env' (local, lab, demo or showcase)" ;;
 esac
 if [ "$action" = destroy ] && [ "$env" = showcase ]; then
-  die "refusing to destroy showcase: it is the protected long-lived environment (docs/adr/0014); its server has delete protection, and it is taken down by hand only"
+  die "refusing to destroy showcase: it is the protected long-lived environment; its server has delete protection, and it is taken down by hand only"
 fi
 backend=${BACKEND:-remote}
 case "$backend" in

@@ -1,8 +1,7 @@
 # Secrets
 
 Credentials for an environment are kept in a dotenv file encrypted with
-[SOPS](https://github.com/getsops/sops) and [age](https://github.com/FiloSottile/age)
-([ADR 0006](../docs/adr/0006-sops-and-age-for-secrets.md)):
+[SOPS](https://github.com/getsops/sops) and [age](https://github.com/FiloSottile/age):
 
 | File | Holds | Who can decrypt it |
 |---|---|---|

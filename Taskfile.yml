@@ -6,7 +6,7 @@
 # take it from OpenTofu to configured, checked hosts (scripts/environment.sh); "task restore-test"
 # tests the restore of the backups of an environment. "task preflight",
 # "task dns-backup", "task sweep:demo" and "task e2e:tunnel" are the Cloudflare tasks around an
-# apply (docs/adr/0024).
+# apply.
 version: "3"
 
 vars:

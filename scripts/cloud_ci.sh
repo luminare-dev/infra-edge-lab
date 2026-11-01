@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The cloud steps of the CI workflows plan, drift and apply (docs/adr/0023). Every one of them is
+# The cloud steps of the CI workflows plan, drift and apply. Every one of them is
 # behind the repository variable CLOUD_ENVS_ENABLED; this script is what they run once it is on.
 #
 # Usage: scripts/cloud_ci.sh <plan|drift|apply> <lab|demo|showcase>
@@ -46,7 +46,7 @@ case "$env" in
   *) die "unknown environment '$env' (lab, demo or showcase)" ;;
 esac
 if [ "$action" = apply ] && [ "$env" = lab ]; then
-  die "lab is applied from the operator's workstation only: no write token of the lab leaves it (docs/adr/0023)"
+  die "lab is applied from the operator's workstation only: no write token of the lab leaves it"
 fi
 
 summary_file=${GITHUB_STEP_SUMMARY:-/dev/null}
@@ -249,7 +249,7 @@ do_drift() {
 do_apply() {
   quiet "$work/init.log" bash scripts/tofu_env.sh init "$env" -lockfile=readonly
   # A cloud server starts its connector at the first boot, so this plan reads the tunnel token
-  # (write permission); it lands in the encrypted plan and state only (docs/adr/0011).
+  # (write permission); it lands in the encrypted plan and state only.
   quiet "$work/plan.log" env TF_VAR_fetch_tunnel_token=true \
     tofu -chdir="$dir" plan -input=false -no-color -out="$work/tfplan"
   summarise "Plan of $env (applied below)"

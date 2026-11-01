@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end test of the tunnel (docs/adr/0024): the demo environment with substrate = docker, so
+# End-to-end test of the tunnel: the demo environment with substrate = docker, so
 # its one host is a systemd container on the local Docker daemon, published through a real
 # Cloudflare tunnel with its DNS records and Access applications, checked from outside through
 # Cloudflare, and always taken down again. "task e2e:tunnel" and the CI workflow e2e-tunnel run
@@ -28,7 +28,7 @@
 #      the first one
 # A summary with the timings is printed at the end and, in GitHub Actions, written to the job
 # summary. Plans and applies are written to log files in the work folder, and only a summary by
-# resource is printed (docs/adr/0023); in GitHub Actions every credential, ID and the zone are
+# resource is printed; in GitHub Actions every credential, ID and the zone are
 # masked in the log.
 #
 # Needs: Docker (privileged containers), OpenTofu, ansible-playbook, ansible and ansible-galaxy
@@ -217,7 +217,7 @@ step() {
 # quiet <log> <command ...>: the output goes to a log file in the work folder; only the result
 # lines are shown, and on a failure the error messages. OpenTofu ends a "... complete" line with
 # the object's ID ("[id=...]"); the apply runs before the IDs of the run are known and masked, so
-# the IDs are cut from every line shown (docs/adr/0023: a summary by resource only).
+# the IDs are cut from every line shown (a summary by resource only).
 quiet() {
   local log=$1 status=0
   shift

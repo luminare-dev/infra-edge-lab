@@ -3,19 +3,18 @@
 - Every module has the expected files, a required_version, a lock file for its providers and
   tests; no module configures a provider.
 - Every environment has the expected files and a lock file that locks each provider to the same
-  build as the modules; its tests mock every provider (docs/adr/0014).
+  build as the modules; its tests mock every provider.
 - State: the remote environments use the S3 backend with a lock file and no endpoint or
   credential in the code, the local environment a local file, and every environment the same
-  enforced encryption (docs/adr/0013).
+  enforced encryption.
 - scripts/tofu_env.sh (task init, plan and test of one environment), run with fake tofu and sops
   binaries: the BACKEND=local override, the passphrase check, the SOPS file and the tunnel token
   that a plan never reads.
 - The .tf and .tftest.hcl files stay valid for Terraform: no .tofu file in a module, only
-  encryption.tofu in an environment, and no OpenTofu-only construct in a .tf file
-  (docs/adr/0005).
+  encryption.tofu in an environment, and no OpenTofu-only construct in a .tf file.
 - No real zone, host name or address: the zone is always a variable, and examples use
-  documentation names and ranges (docs/adr/0009).
-- The tunnel token is never an output (docs/adr/0011).
+  documentation names and ranges.
+- The tunnel token is never an output.
 - The pins of scripts/install_tofu_tools.sh agree with docs/toolchain.md, the CI job "tofu" runs
   every step of scripts/check_tofu.sh (the IaC security scan with Trivy among them), every
   finding the scan accepts has a reason, and the host image is pinned by digest.
@@ -178,7 +177,7 @@ class EnvironmentLayoutTest(unittest.TestCase):
                     self.assertNotRegex(text, r'(?m)^provider\s+"')
 
     def test_tunnel_token_is_never_read_in_a_plan(self):
-        """Read-only plans leave fetch_tunnel_token false (docs/adr/0011)."""
+        """Read-only plans leave fetch_tunnel_token false."""
         for env in ("demo", "showcase"):
             with self.subTest(env=env):
                 block = re.search(r'(?s)variable "fetch_tunnel_token" \{.*?\n\}', read(f"tofu/envs/{env}/variables.tf"))
@@ -188,7 +187,7 @@ class EnvironmentLayoutTest(unittest.TestCase):
 
 
 class StateTest(unittest.TestCase):
-    """docs/adr/0013: encrypted state, in R2 with a lock file or in a local file."""
+    """Encrypted state, in R2 with a lock file or in a local file."""
 
     S3_SETTINGS = {
         "bucket": '"luminare-tfstate"',

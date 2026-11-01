@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fetch the token of a remotely managed tunnel from the Cloudflare API and print it.
 
-The tunnel token is never an OpenTofu output (docs/adr/0011). "task configure ENV=<env>" for an
+The tunnel token is never an OpenTofu output. "task configure ENV=<env>" for an
 environment with a tunnel (lab, demo, showcase) runs this script inside "sops exec-env" and
 captures the token into TUNNEL_TOKEN for the one ansible-playbook command that needs it, so the
 token is never written to a file on the workstation and never appears on a command line:

@@ -1,5 +1,5 @@
 # Inputs of the lab environment: virtual machines on one Proxmox VE node, published through a
-# Cloudflare tunnel behind Access (docs/adr/0014). The defaults use documentation addresses
+# Cloudflare tunnel behind Access. The defaults use documentation addresses
 # (192.0.2.0/24); the real values of a lab come from TF_VAR_* in secrets/lab.enc.env or from a
 # git-ignored terraform.tfvars. The state passphrase is declared in encryption.tofu.
 

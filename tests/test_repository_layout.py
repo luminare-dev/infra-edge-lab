@@ -1,5 +1,5 @@
 """Repository conventions of infra-edge-lab: layout, ignored files, secrets folder, Dependabot,
-the shared test command, the collection tags and the ADR list in the README.
+the shared test command and the collection tags in the README.
 
 Standard library only, like the template's tests, so they run on any python3 >= 3.10.
 """
@@ -32,7 +32,7 @@ def in_git_work_tree() -> bool:
 class LayoutTest(unittest.TestCase):
     def test_top_level_folders_exist(self):
         for rel in ("tofu/modules", "tofu/envs", "ansible/playbooks", "ansible/inventories",
-                    "ansible/roles", "secrets", "scripts", "docs/adr"):
+                    "ansible/roles", "secrets", "scripts"):
             with self.subTest(folder=rel):
                 self.assertTrue((ROOT / rel).is_dir())
 
@@ -269,19 +269,6 @@ class CollectionTagsTest(unittest.TestCase):
             with self.subTest(collection=name):
                 self.assertIn(name, rows, "a row of the Supported versions table")
                 self.assertTrue(rows[name][1].startswith(f"`{version}`"), rows[name][1])
-
-
-class AdrListTest(unittest.TestCase):
-    def test_every_adr_is_linked_from_the_readme(self):
-        readme = read("README.md")
-        adrs = sorted(p for p in (ROOT / "docs" / "adr").glob("[0-9][0-9][0-9][0-9]-*.md")
-                      if not p.name.startswith("0000-"))
-        self.assertGreaterEqual(len(adrs), 8)
-        for number, path in enumerate(adrs, 1):
-            with self.subTest(adr=path.name):
-                self.assertTrue(path.name.startswith(f"{number:04d}-"), "ADR numbers have a gap")
-                self.assertTrue(path.read_text(encoding="utf-8").startswith(f"# {number:04d}. "))
-                self.assertIn(f"(docs/adr/{path.name})", readme)
 
 
 if __name__ == "__main__":

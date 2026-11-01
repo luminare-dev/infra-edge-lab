@@ -1,4 +1,4 @@
-# Name rules for the shared DNS zone (docs/adr/0009), the same values as in the cf_tunnel
+# Name rules for the shared DNS zone, the same values as in the cf_tunnel
 # module: an Access application is only created for a hostname that the tunnel module would
 # accept as well. tests/access.tftest.hcl covers the rules here; the denylist is a second layer
 # behind the prefix rule and is tested only together with it.

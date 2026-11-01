@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render an Ansible inventory from the OpenTofu outputs of one environment.
 
-Every environment under tofu/envs returns the same "hosts" output (docs/adr/0014): a map from
+Every environment under tofu/envs returns the same "hosts" output: a map from
 host name to ansible_host, connection, groups and ip. This script turns it into the YAML
 inventory that the playbooks read, so the inventory never depends on the substrate (containers,
 Proxmox VE virtual machines or cloud servers):

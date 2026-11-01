@@ -2,7 +2,7 @@
 # Keeps the SHA pins of the workflow actions and their "# vX.Y.Z" comments current, the
 # hash-pinned Python tools (requirements-dev.txt, and requirements-test.txt, which Dependabot
 # recompiles from requirements-test.in with pip-compile), the OpenTofu providers and lock files of
-# every module and environment under tofu/ (ADR 0007, ADR 0012) and the base image digests of
+# every module and environment under tofu/ and the base image digests of
 # images/systemd-host/Dockerfile (the host image of docker_host and of the Molecule scenarios).
 # A 7-day cooldown lets a bad release surface before it lands here. Every pull request title
 # starts with a Conventional Commit type, so it passes the PR-title check. The binary tools
@@ -64,7 +64,7 @@ updates:
         exclude-patterns: ["bpg/proxmox"]
 
   # The digest-pinned base images (Debian 13 and Ubuntu 24.04) of the systemd host image that
-  # the docker_host module and the Molecule scenarios build (ADR 0010, ADR 0015).
+  # the docker_host module and the Molecule scenarios build.
   - package-ecosystem: docker
     directory: /images/systemd-host
     schedule:

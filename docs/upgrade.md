@@ -47,8 +47,8 @@ ANSIBLE_COLLECTIONS_PATH=/tmp/collections task e2e:local
 ```
 
 An update of the `ansible` package in `requirements-test.txt` (Dependabot) changes the bundled
-community collections: set their versions in `ansible/requirements.yml` to the new ones; the
-[runbook](runbook.md#failure-a-dependabot-pull-request-fails-ci) explains the failing test.
+community collections: set their versions in `ansible/requirements.yml` to the new ones;
+`tests/test_ansible.py` names each one.
 
 ## Tools, providers and images
 

@@ -1,5 +1,5 @@
 # State and plan encryption of this environment (OpenTofu only: Terraform and TFLint do not read
-# .tofu files; docs/adr/0005, docs/adr/0013). The same file is in every environment.
+# .tofu files). The same file is in every environment.
 #
 # The passphrase comes from TF_VAR_state_passphrase: from the SOPS file of the environment
 # (secrets/<env>.enc.env) for lab, demo and showcase, and a random one per run for local, whose

@@ -1,18 +1,9 @@
 # Toolchain
 
-The tools used to work on this repository are pinned to one version each; the exception is
-named below (the dependencies of markdownlint-cli2 in a local run). A downloaded binary is
-installed only after its sha256 matches the checksum the tool's project publishes with the
-release; Python packages are installed with `pip --require-hashes` from files that list the
-sha256 of every distribution file on PyPI, and OpenTofu providers are checked against the
-`.terraform.lock.hcl` of each module.
-Workflow actions are pinned by commit SHA
-([ADR 0002](adr/0002-pin-actions-and-downloaded-tools.md)); `python3 scripts/check_workflows.py --list`
-prints them.
-
-Versions and checksums were verified on 2026-10-21 for Linux x86_64 (the GitHub `ubuntu-24.04`
-runner and the workstation). `tests/test_toolchain.py` fails when this page, the workflow inputs,
-the requirements files and the README disagree.
+Every tool is pinned to one version. Binaries are installed only after their sha256 matches,
+Python packages come from hash-pinned requirements files, and providers are checked against each
+`.terraform.lock.hcl`. `tests/test_toolchain.py` fails when this page, the workflows, the
+requirements files and the README disagree. The checksums are for Linux x86_64.
 
 ## Binary tools
 
@@ -20,7 +11,7 @@ the requirements files and the README disagree.
 |---|---|---|---|---|---|
 | OpenTofu | 1.13.1 | provisioning code in `tofu/` (CI `tofu` and `e2e-local`, `task tofu`, the environment tasks; `task lint` runs `tofu fmt -check`) | `tofu_1.13.1_linux_amd64.tar.gz` | `378ada19d4bc70c43732004e8159be771b23b9a5afdf059e5f8a2b3fa2c70a69` | `tofu_1.13.1_SHA256SUMS` of the [release](https://github.com/opentofu/opentofu/releases/tag/v1.13.1), signed (`.sig`/`.pem` and `.gpgsig`) |
 | TFLint | 0.64.0 | linter for `tofu/` with its bundled Terraform ruleset, configured in `.tflint.hcl` (CI `tofu`, `task tofu`) | `tflint_linux_amd64.zip` | `cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537` | `checksums.txt` of the [release](https://github.com/terraform-linters/tflint/releases/tag/v0.64.0), keyless-signed (`.keyless.sig`, `.pem`) |
-| Terraform | 1.16.6 | compatibility check only: `terraform validate` of `tofu/` ([ADR 0005](adr/0005-opentofu-instead-of-terraform.md)); downloaded into a throwaway directory by `scripts/check_tofu.sh compat` | `terraform_1.16.6_linux_amd64.zip` | `38034b38d03096399a7a1264a14561a8029b2b496fd1f169452656e53968f1b7` | `terraform_1.16.6_SHA256SUMS` of the [release](https://releases.hashicorp.com/terraform/1.16.6/), signed by HashiCorp's release key (`_SHA256SUMS.sig`; signature checked 2026-10-21) |
+| Terraform | 1.16.6 | compatibility check only: `terraform validate` of `tofu/`; downloaded into a throwaway directory by `scripts/check_tofu.sh compat` | `terraform_1.16.6_linux_amd64.zip` | `38034b38d03096399a7a1264a14561a8029b2b496fd1f169452656e53968f1b7` | `terraform_1.16.6_SHA256SUMS` of the [release](https://releases.hashicorp.com/terraform/1.16.6/), signed by HashiCorp's release key (`_SHA256SUMS.sig`; signature checked 2026-10-21) |
 | go-task | 3.54.0 | `Taskfile.yml` (`task lint`, `task test`, `task tofu`, `task e2e:local`; CI `e2e-local` downloads it with this sha256) | `task_linux_amd64.tar.gz` | `680859dbb4d881a9c72d4d9a8f510825450849af8567deacd7302c01124416fb` | `task_checksums.txt` of the [release](https://github.com/go-task/task/releases/tag/v3.54.0) |
 | gitleaks | 8.30.1 | secret scan of the full history (CI `secrets / gitleaks`, `task lint`) | `gitleaks_8.30.1_linux_x64.tar.gz` | `551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb` | `gitleaks_8.30.1_checksums.txt` of the [release](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1) |
 | actionlint | 1.7.12 | workflow linter (CI `ci / lint-test`, `task lint`) | `actionlint_1.7.12_linux_amd64.tar.gz` | `8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8` | `actionlint_1.7.12_checksums.txt` of the [release](https://github.com/rhysd/actionlint/releases/tag/v1.7.12) |
@@ -34,10 +25,7 @@ markdownlint-cli2 **0.23.2** is the version that CI's `DavidAnson/markdownlint-c
 v24.2.0 bundles. `task lint` runs it with `npx --yes markdownlint-cli2@0.23.2`; npm checks the
 package against the registry's integrity value
 (`sha512-eUhcnkSpzURo/o4htSqc7LPDszgOOTknhU4eY/sPHvMCLxnTCYscv1gw1/js/idmaZPisv9ECVEIORcllqjTUw==`).
-That pins the package itself only: it names exact versions of its direct dependencies, but their
-own dependencies resolve from semver ranges when npx installs them, and this repository keeps no
-lock file for them. CI installs nothing from npm: the action runs the copy bundled in its
-`dist/`, fixed by the action's commit SHA.
+CI runs the copy bundled in the action instead.
 
 `scripts/install_tofu_tools.sh` holds the versions and sha256 values of OpenTofu, TFLint,
 Terraform and Trivy for the CI job `tofu` and the compatibility check; `tests/test_tofu.py` and
@@ -56,24 +44,15 @@ tar -xzf task_linux_amd64.tar.gz task && install -m 0755 task ~/.local/bin/task
 Each module under `tofu/modules/` and each environment under `tofu/envs/` pins its providers
 with a version constraint in `versions.tf` and commits a `.terraform.lock.hcl` with package
 checksums for `linux_amd64` and `darwin_arm64` and the registry's signed checksums of every
-platform's archive ([ADR 0012](adr/0012-provider-pins-and-lock-files.md)). An environment locks
-the same version and checksums as the modules it calls; `tests/test_tofu.py` checks this.
-Versions were checked in the OpenTofu registry on 2026-10-21:
+platform's archive. An environment locks the same versions as the modules it calls
+(`tests/test_tofu.py` checks this).
 
-| Provider | Constraint | Locked | Newest release on 2026-10-21 | Note |
-|---|---|---|---|---|
-| `bpg/proxmox` | `~> 0.114.0` | 0.114.0 | 0.117.0 | below 1.0, so patch releases only; Dependabot proposes newer minor releases in a pull request of their own |
-| `cloudflare/cloudflare` | `~> 5.25` | 5.28.1 | 5.28.1 | 5.28.1 distrusts certificate authorities revoked for compromise |
-| `hetznercloud/hcloud` | `~> 1.69` | 1.70.0 | 1.70.0 | |
-| `kreuzwerker/docker` | `~> 4.6` | 4.6.0 | 4.6.0 | |
-
-`cloudflare` 5.28.1 was published at 2026-10-20 23:35 UTC, less than a day before it was locked
-here, and so was taken without the 7-day cooldown that Dependabot keeps for version updates
-([ADR 0007](adr/0007-dependabot-instead-of-renovate.md)). It is a security rebuild whose release
-notes list no schema change: it is built with Go 1.27.3, which distrusts intermediate certificate
-authorities revoked for compromise on the connection that carries the Cloudflare API token.
-Dependabot skips the cooldown for security updates for the same reason; the tests pass with
-5.28.1 and with 5.25.0.
+| Provider | Constraint | Locked | Note |
+|---|---|---|---|
+| `bpg/proxmox` | `~> 0.114.0` | 0.114.0 | below 1.0, so patch releases only |
+| `cloudflare/cloudflare` | `~> 5.25` | 5.28.1 | |
+| `hetznercloud/hcloud` | `~> 1.69` | 1.70.0 | |
+| `kreuzwerker/docker` | `~> 4.6` | 4.6.0 | |
 
 `tofu test` and `tofu validate` also pass with the lowest version of each range
 (`cloudflare` 5.25.0, `hcloud` 1.69.0), in the modules and in the environments. After a
@@ -86,20 +65,18 @@ tofu -chdir=tofu/envs/<env> providers lock -platform=linux_amd64 -platform=darwi
 ```
 
 `images/systemd-host/Dockerfile` (the host image of the `docker_host` module) starts from
-`debian:trixie` and `ubuntu:24.04`, each pinned by digest (pulled and checked 2026-10-21).
+`debian:trixie` and `ubuntu:24.04`, each pinned by digest.
 Dependabot's `docker` ecosystem proposes new digests.
 
 The hosts that `hcloud_vm` creates install cloudflared 2026.9.1 at first boot from its GitHub
 release (`cloudflared-linux-amd64.deb`, sha256
-`3be76adc4185d36a0bfb4c2dd8663292f0ed363797f2180333b513b43c81d419` from the release notes, the
-same as GitHub's asset digest and the download checked on 2026-10-21). Cloudflare's package
-repository lists only its newest release (2026.10.2 on 2026-10-21), so it cannot install a
-pinned older version.
+`3be76adc4185d36a0bfb4c2dd8663292f0ed363797f2180333b513b43c81d419` from the release notes). Cloudflare's package
+repository only has the newest release, so it cannot install a pinned version.
 
 ## What the roles download
 
 The roles in `ansible/roles` download these files on the managed hosts, each checked against a
-value pinned in the role (checked on 2026-10-21). Dependabot does not see them; they are updated
+value pinned in the role. Dependabot does not see them; they are updated
 by hand like the binary tools ([runbook](runbook.md#procedure-upgrade-node_exporter-or-uptime-kuma)).
 `tests/test_ansible.py` fails when a checksum in the role defaults is missing on this page.
 
@@ -123,7 +100,7 @@ tag points to), `devsec.hardening` 11.0.0 and `prometheus.prometheus` 0.30.2 fro
 (`ansible-galaxy` checks each download against the sha256 that Galaxy publishes), and the other
 community collections from the hash-pinned `ansible` package. The collections' roles pin their
 own downloads (for example cloudflared, json_exporter and blackbox_exporter); their repositories
-list them. The values of the `local` environment add one pin (checked on 2026-10-21):
+list them. The values of the `local` environment add one pin:
 
 | What | Version | Pinned in | File | sha256 | Checksum source |
 |---|---|---|---|---|---|
@@ -135,7 +112,7 @@ The game server of the `local` environment is never downloaded: it is the stand-
 ## Python
 
 Python **3.12** is the `python3` of the `ubuntu-24.04` runner and the oldest version
-ansible-core 2.21 supports. The hash-pinned install was also tested with Python 3.13.
+ansible-core 2.21 supports. Python 3.13 works too.
 
 The table names the file that pins each package instead of repeating its version, so a
 Dependabot update of a requirements file needs no edit on this page. `scripts/run_tests.sh`
@@ -145,7 +122,7 @@ ansible-lint; the Molecule jobs of CI and `task molecule` use the same file.
 | Package | Pinned in | Purpose |
 |---|---|---|
 | ansible-core | `requirements-test.in`, compiled into `requirements-test.txt` | Ansible controller |
-| ansible | `requirements-test.in`, compiled into `requirements-test.txt` | the community collections (`community.docker`, `ansible.posix`, `community.sops`, ...) for ansible-lint, Molecule and the roles; `ansible/requirements.yml` pins the same versions ([ADR 0016](adr/0016-collections-from-git-tags-and-one-pinned-bundle.md)) |
+| ansible | `requirements-test.in`, compiled into `requirements-test.txt` | the community collections (`community.docker`, `ansible.posix`, `community.sops`, ...) for ansible-lint, Molecule and the roles; `ansible/requirements.yml` pins the same versions |
 | ansible-lint | `requirements-test.in`, compiled into `requirements-test.txt` | Ansible linter (production profile) |
 | molecule | `requirements-test.in`, compiled into `requirements-test.txt` | role test framework |
 | molecule-plugins (`docker` extra) | `requirements-test.in`, compiled into `requirements-test.txt` | Molecule Docker driver |
@@ -155,7 +132,7 @@ ansible-lint; the Molecule jobs of CI and `task molecule` use the same file.
 | click | `click==8.2.1` in the same command | command-line library of pip-tools, held below 8.3 (see below) |
 
 `requirements-test.txt` is generated from `requirements-test.in` by pip-compile and lists every
-dependency with its hashes (46 packages when it was compiled on 2026-10-21).
+dependency with its hashes.
 `requirements-dev.txt` comes from the template and is pinned by hand. Install either file with
 `pip install --require-hashes --only-binary=:all: -r <file>`; `scripts/run_tests.sh` and
 `task venv` do this.
@@ -165,8 +142,8 @@ dependency with its hashes (46 packages when it was compiled on 2026-10-21).
 `.pre-commit-config.yaml` runs the quick checks as git hooks: end-of-file and trailing-whitespace
 fixes, shellcheck, gitleaks on the staged changes, yamllint, the check that every
 `secrets/*.enc.env` is encrypted (`sops filestatus`), `tofu fmt`, TFLint and ansible-lint. It is
-optional; CI runs the same checks in its own jobs. Install pre-commit (tested with 4.7.0, for
-example `pipx install pre-commit`), run `task venv` and put `.venv/bin` on the PATH, then
+optional; CI runs the same checks in its own jobs. Install pre-commit (for example
+`pipx install pre-commit`), run `task venv` and put `.venv/bin` on the PATH, then
 `pre-commit install`. The hooks of other repositories are pinned to a commit SHA with the tag in a
 comment (`pre-commit autoupdate --freeze` writes them so), and pre-commit installs them into its own
 cache on the first run: pre-commit-hooks v6.0.0, shellcheck-py v0.11.0.1 (shellcheck 0.11.0) and the
@@ -176,7 +153,7 @@ other hooks run the tools of this page.
 ## Updating a pin
 
 - **Python test tools:** Dependabot recompiles `requirements-test.txt` when a pinned package has
-  a new release ([ADR 0007](adr/0007-dependabot-instead-of-renovate.md)). To change the pins by
+  a new release. To change the pins by
   hand, edit `requirements-test.in` and compile with Python 3.12:
 
   ```bash

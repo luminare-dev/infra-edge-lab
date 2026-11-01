@@ -1,9 +1,7 @@
 # Installation
 
-This page sets up a workstation for working on the repository and for running its environments.
-Tested on 2026-10-21 and 2026-10-22 on Linux x86_64 with the versions in
-[toolchain.md](toolchain.md); the Python part was also tested in the `python:3.12-slim` and
-`python:3.13-slim` containers.
+Sets up a Linux x86_64 workstation for the repository and its environments. Versions are in
+[toolchain.md](toolchain.md).
 
 ## Requirements
 
@@ -45,12 +43,9 @@ To run the playbooks, install the collections of
 task collections
 ```
 
-`luminare.infra_edge` and `luminare.gameserver` are cloned from their public GitHub repositories
-(`luminare-dev/ansible-collection-infra_edge`, `luminare-dev/ansible-collection-gameserver`) at
-the release tags pinned in that file; `devsec.hardening` and `prometheus.prometheus` come from
-Ansible Galaxy at exact versions, and the other community collections from the `ansible` package
-of the virtual environment. `task e2e:local` runs the same install itself. The unit tests and
-ansible-lint need none of them.
+The luminare collections are cloned from GitHub at the pinned release tags; `devsec.hardening`
+and `prometheus.prometheus` come from Ansible Galaxy. The unit tests and ansible-lint need none of
+them.
 
 ## Keys for the environments with credentials
 
@@ -74,16 +69,10 @@ gh attestation verify infra-edge-lab-<version>.tar.gz --repo luminare-dev/infra-
 task test
 ```
 
-The unit tests end with a line that starts with `OK` (a test that needs an optional tool, such
-as markdownlint-cli2, that is not on the `PATH` is counted as skipped), and ansible-lint ends with
-`Passed: 0 failure(s), 0 warning(s)` and the production profile. `task lint` then runs every
-repository check; each one prints no finding. `task tofu` runs the OpenTofu checks; every
-`tofu test` ends with `Success!` and every validation with `The configuration is valid.` The
-OpenTofu checks download the providers named in the lock files into `.terraform/` of each
-module and environment, one copy per directory: about 1.5 GB unpacked, because the Cloudflare
-provider (about 190 MB) is used by three modules and three environments. With
-`TF_PLUGIN_CACHE_DIR` set to a directory, every provider is stored there once, about 320 MB in
-all.
+The unit tests end with `OK` (tests that need an optional tool that is missing are skipped) and
+ansible-lint with `Passed: 0 failure(s), 0 warning(s)`. `task lint` runs the repository checks
+and `task tofu` the OpenTofu checks. The providers take about 1.5 GB in the `.terraform/`
+folders; set `TF_PLUGIN_CACHE_DIR` to share one copy (about 320 MB).
 
 `task molecule ROLE=<role>` runs a role's Molecule scenario on both platforms (Debian 13 and
 Ubuntu 24.04, one after the other); each ends with `Executed: Successful` for every step, and the
@@ -97,12 +86,8 @@ again; this is what CI's `e2e-local` workflow runs:
 task e2e:local
 ```
 
-It creates `edge-01`, `db-01` and `fx-01` as containers, configures them twice with
-`ansible/playbooks/site.yml` (the second run must change nothing), plans again (no changes),
-smoke-tests them, backs each one up and tests the restore, destroys them, and ends with a table
-of its steps and their times
-(`Result: passed`). To keep the environment for a look inside, build it step by step instead,
-with one passphrase for the whole session:
+It ends with `Result: passed`. To keep the environment for a look inside, build it step by step
+instead, with one passphrase for the whole session:
 
 ```bash
 export TF_VAR_state_passphrase="$(openssl rand -base64 32)"
@@ -114,21 +99,7 @@ task destroy ENV=local
 
 ## Uninstall
 
-Delete the clone. Inside it, the tasks create `.venv/` (Python tools), `.task/` (go-task's
-checksum cache), `tofu/modules/*/.terraform/` and `tofu/envs/*/.terraform/` (provider
-downloads), and an environment with a local state keeps `terraform.tfstate` (and
-`backend_override.tf` after `BACKEND=local`) in its folder. Before deleting a state, destroy what
-it holds (`task destroy ENV=local` with the same passphrase, which also deletes the empty state of
-`local`, `ansible/inventories/local/hosts.yml` and the generated secrets in
-`ansible/inventories/local/.generated/`). The `docker_host`
-integration test removes its containers, network and image when it ends, and every Molecule
-scenario removes its containers; the Molecule images `molecule_local/lab-molecule-debian13` and
-`molecule_local/lab-molecule-ubuntu2404` and the base images `debian:trixie` and `ubuntu:24.04`
-stay in the Docker image store (`docker image rm` removes them); the destroy of `local` removes
-its image `lab-systemd-host-*` too. The Prometheus archive of the `local` environment is cached in
-`ansible/inventories/local/.generated/` and goes with it. `ansible/collections/` holds the
-collections installed from `ansible/requirements.yml`. Outside it, download caches in your home directory remain: pip's
-(`~/.cache/pip`, written by `task venv` and `task test`), npm's (`~/.npm`, where
-`npx markdownlint-cli2` in `task lint` keeps the package), and Molecule's and ansible-lint's
-working files (`~/.ansible/tmp`, `~/.cache/ansible-compat`). They may also hold files of other
-projects, so delete them only if nothing else needs them.
+Destroy what an environment holds first (`task destroy ENV=local` with the same passphrase), then
+delete the clone. The Molecule and host images stay in Docker's image store (`docker image rm`),
+and pip, npm and Ansible keep caches in your home directory (`~/.cache/pip`, `~/.npm`,
+`~/.ansible/tmp`, `~/.cache/ansible-compat`).

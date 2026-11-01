@@ -1,6 +1,6 @@
 # Shared Molecule configuration for the role scenarios (ansible/roles/<role>/molecule/default/).
 # Molecule reads this file from the repository root and merges the scenario's molecule.yml on
-# top of it, so a scenario only adds what is special to its role (docs/adr/0015).
+# top of it, so a scenario only adds what is special to its role.
 #
 # Run one role locally (Docker that allows privileged containers, the tools of
 # requirements-test.txt; "task molecule ROLE=<role>" does the same):

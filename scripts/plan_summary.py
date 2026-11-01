@@ -4,7 +4,7 @@
 The logs and job summaries of a public repository can be read by anyone with a GitHub account,
 and a full plan shows every attribute: addresses, hostnames, IDs, sometimes secrets that the
 provider does not mark as sensitive. The CI workflows therefore never print a plan; they print
-this summary of it instead (docs/adr/0023):
+this summary of it instead:
 
     tofu -chdir=tofu/envs/demo show -json tfplan | python3 scripts/plan_summary.py --env demo
 

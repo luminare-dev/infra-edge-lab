@@ -20,7 +20,7 @@ defaults, the optional inputs and the outputs are in
 | Environment | OpenTofu inputs to set (`TF_VAR_<name>`) | Provider and backend credentials | Ansible values | Kept in |
 |---|---|---|---|---|
 | `local` | `state_passphrase` (`task e2e:local` makes a random one per run) | none | `ansible/inventories/local/group_vars/` (committed; the passwords are generated into `.generated/`) | nothing to keep |
-| `lab` | `state_passphrase`, `zone`, `account_id`, `zone_id`, `access_team_name`, `allowed_emails`, `ssh_keys`; a real lab also overrides `hosts`, `node_name`, `gateway` and `pve_ip`, whose defaults are documentation values | `PROXMOX_VE_ENDPOINT`, `PROXMOX_VE_API_TOKEN` ([ADR 0025](adr/0025-proxmox-ve-api-tokens-with-least-privilege.md)), `PROXMOX_VE_API_HEADERS` (CI only, the service token of `lab-pveapi`), `CLOUDFLARE_API_TOKEN`, `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | none at this version: write `group_vars/`, with the secrets in `*.sops.yaml` files, before `task configure` | `secrets/lab.enc.env`; read-only tokens in `secrets/lab-ci.enc.env` |
+| `lab` | `state_passphrase`, `zone`, `account_id`, `zone_id`, `access_team_name`, `allowed_emails`, `ssh_keys`; a real lab also overrides `hosts`, `node_name`, `gateway` and `pve_ip`, whose defaults are documentation values | `PROXMOX_VE_ENDPOINT`, `PROXMOX_VE_API_TOKEN`, `PROXMOX_VE_API_HEADERS` (CI only, the service token of `lab-pveapi`), `CLOUDFLARE_API_TOKEN`, `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | none at this version: write `group_vars/`, with the secrets in `*.sops.yaml` files, before `task configure` | `secrets/lab.enc.env`; read-only tokens in `secrets/lab-ci.enc.env` |
 | `demo` | `state_passphrase`, `zone`, `account_id`, `zone_id`, `access_team_name`; `ssh_public_key` with `substrate = "hcloud"` (the default); `allowed_emails` once a host is in `fxserver` | `CLOUDFLARE_API_TOKEN`, `HCLOUD_TOKEN` (with `hcloud`), `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | `ansible/inventories/demo/group_vars/` (committed; the backup password is generated into `.generated/`) | `secrets/demo.enc.env`; read-only tokens in `secrets/demo-ci.enc.env`; the tunnel test in `secrets/demo-e2e.enc.env` |
 | `showcase` | `state_passphrase`, `zone`, `account_id`, `zone_id`, `access_team_name`, `allowed_emails`, `ssh_public_key`; `status_origin` for `show-status` | `CLOUDFLARE_API_TOKEN`, `HCLOUD_TOKEN`, `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | none at this version, as for `lab` | `secrets/showcase.enc.env`; read-only tokens in `secrets/showcase-ci.enc.env` |
 
@@ -52,15 +52,14 @@ The options below change how the tasks, checks and tests run.
 | `E2E_TUNNEL_DIR` (environment variable) | path | `infra-edge-lab-e2e-tunnel` in `RUNNER_TEMP` or `TMPDIR` | Work folder of `task e2e:tunnel` (the copy of the environment, its state, logs and the throwaway key); removed at the end. A folder left by an interrupted run blocks the next run until `bash scripts/e2e_tunnel.sh cleanup`. |
 | `CLOUDFLARED` (environment variable) | path | unset: the pinned release is downloaded and checked by sha256 | `cloudflared` binary for the SSH check of `task e2e:tunnel` (needed on a control node that is not Linux x86_64). |
 | `CLOUD_ENVS_ENABLED` (repository variable) | `true` or unset | unset | Turns on the workflows `plan`, `apply`, `drift` and `e2e-tunnel`; unset, every job of them is skipped ([runbook](runbook.md#procedure-turn-on-the-cloud-workflows)). |
-| `TF_VAR_state_passphrase` (environment variable) | string, at least 16 characters | none; required | Passphrase of the state and plan encryption ([ADR 0013](adr/0013-encrypted-state-in-r2-with-a-lock-file.md)); from the SOPS file, or a random one per run for `local`. |
+| `TF_VAR_state_passphrase` (environment variable) | string, at least 16 characters | none; required | Passphrase of the state and plan encryption; from the SOPS file, or a random one per run for `local`. |
 | Arguments after `--` (`task plan ENV=lab -- -out=lab.tfplan`) | OpenTofu or ansible-playbook arguments | none | Passed on to `tofu init` or `tofu plan`, and with `task configure`, `task smoke`, `task restore-test`, `task up` and `task rebuild` to `ansible-playbook` (for example `-- --diff`). |
 | `ROLE` (Taskfile variable, `task molecule ROLE=docker`) | `docker`, `monitoring` or `deploy_target` | none; required by `molecule` | Role under `ansible/roles/` whose Molecule scenario `task molecule` runs. |
 | `PLATFORM` (Taskfile variable, `task molecule ROLE=docker PLATFORM=debian13`) | `debian13` or `ubuntu2404` | both | Runs the scenario on one platform only, as one CI matrix job does. |
 
 ## Playbooks and inventories
 
-`ansible/playbooks/site.yml` configures every environment
-([ADR 0021](adr/0021-one-site-playbook-with-the-inventory-from-the-opentofu-outputs.md)); run it
+`ansible/playbooks/site.yml` configures every environment; run it
 with `task configure ENV=<env>`. Its inventory is `ansible/inventories/<env>/`: `hosts.yml`, which
 `task inventory ENV=<env>` writes from the environment's `hosts` output
 (`scripts/render_inventory.py`), and the committed `group_vars/`.
@@ -185,8 +184,7 @@ An upload-only SSH account and a path unit that runs a deploy script
 Secrets never go into this repository in clear text, nor into an issue or a log. CI scans every
 commit with gitleaks; a leaked secret is rotated first and removed from history second.
 
-Credentials and other secret values are kept in files encrypted with SOPS for age keys
-([ADR 0006](adr/0006-sops-and-age-for-secrets.md)). **This repository ships no encrypted file,
+Credentials and other secret values are kept in files encrypted with SOPS for age keys. **This repository ships no encrypted file,
 no `.sops.yaml` and no age recipient**: each operator creates their own keys and files as
 described below, and a fork never inherits anyone's recipients.
 
@@ -204,7 +202,7 @@ The keys a dotenv file can hold:
 
 | Key | Read by | Notes |
 |---|---|---|
-| `PROXMOX_VE_ENDPOINT`, `PROXMOX_VE_API_TOKEN`, `PROXMOX_VE_API_HEADERS` | bpg/proxmox provider | API token with privilege separation ([ADR 0025](adr/0025-proxmox-ve-api-tokens-with-least-privilege.md)); extra headers for an access proxy in front of the API |
+| `PROXMOX_VE_ENDPOINT`, `PROXMOX_VE_API_TOKEN`, `PROXMOX_VE_API_HEADERS` | bpg/proxmox provider | API token with privilege separation; extra headers for an access proxy in front of the API |
 | `CLOUDFLARE_API_TOKEN`, `TF_VAR_account_id`, `TF_VAR_zone_id` | cloudflare/cloudflare provider; `task configure` (the tunnel token) | token limited to one zone; reading the tunnel token needs tunnel write permission |
 | `TF_VAR_zone`, `TF_VAR_access_team_name`, `TF_VAR_allowed_emails` | `lab`, `demo`, `showcase` | the zone, the Zero Trust team name and who may log in (JSON list) |
 | `TF_VAR_ssh_keys`, `TF_VAR_ssh_public_key` | `lab` (JSON list), `demo` and `showcase` (one key line) | public keys of the admin user |
@@ -263,7 +261,7 @@ creation_rules:
       <operator>,
       <break-glass>
   # Write credentials of demo and showcase, and their secret inventory values: the GitHub
-  # environment of the same name (apply, after the owner's review).
+  # environment of the same name (apply, after a review).
   - path_regex: (secrets/demo\.enc\.env|ansible/inventories/demo/group_vars/.*\.sops\.yaml)$
     age: >-
       <operator>,
@@ -286,9 +284,6 @@ creation_rules:
       <operator>,
       <break-glass>
 ```
-
-The rules were tested on 2026-10-22 with SOPS 3.13.3 and age 1.3.2, with throwaway keys: each
-file of the layout was decrypted by exactly the keys in the table above.
 
 ### Create and use a file
 

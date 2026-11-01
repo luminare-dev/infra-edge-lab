@@ -1,4 +1,4 @@
-# Guard tests of the whole demo environment with mocked providers (docs/adr/0009, docs/adr/0014):
+# Guard tests of the whole demo environment with mocked providers:
 # no cloud account, no Docker daemon and no credentials, so they run on every pull request,
 # forks included. The zone, the addresses and the key are documentation values.
 

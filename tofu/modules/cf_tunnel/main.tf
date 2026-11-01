@@ -1,7 +1,7 @@
 # A remotely managed Cloudflare tunnel (its configuration is held by Cloudflare, so there is no
 # credentials file on the host), its ingress rules and the DNS records that point at it. The
 # tunnel token is never read here and never an output: the configure step fetches it from the
-# API when it needs it (docs/adr/0011).
+# API when it needs it.
 
 locals {
   # Comment on every record this module creates; the sweeper and a reviewer of the zone use it

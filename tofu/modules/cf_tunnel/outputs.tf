@@ -1,4 +1,4 @@
-# Identifiers and names only. The tunnel token is deliberately not an output (docs/adr/0011).
+# Identifiers and names only. The tunnel token is deliberately not an output.
 
 output "tunnel_id" {
   description = "ID of the tunnel; the configure step uses it to fetch the tunnel token from the API."

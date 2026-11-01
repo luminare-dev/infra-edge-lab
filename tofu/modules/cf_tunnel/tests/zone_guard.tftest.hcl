@@ -1,4 +1,4 @@
-# Shared-zone guard of the cf_tunnel module (docs/adr/0009). The provider is mocked: no
+# Shared-zone guard of the cf_tunnel module. The provider is mocked: no
 # credentials and no network, so the tests run on every pull request, forks included. The zone
 # and the addresses are documentation values (example.com, 192.0.2.0/24, 203.0.113.0/24).
 

@@ -1,5 +1,5 @@
 # Inputs of the docker_host module: containers with systemd as PID 1 that stand in for the
-# virtual machines of the other environments (docs/adr/0010).
+# virtual machines of the other environments.
 
 variable "env" {
   description = "Environment of the containers: local (no cloud account at all) or demo (the tunnel end-to-end test on a CI runner)."

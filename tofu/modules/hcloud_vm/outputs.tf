@@ -1,4 +1,4 @@
-# Identifiers and addresses only. The tunnel token is never an output (docs/adr/0011).
+# Identifiers and addresses only. The tunnel token is never an output.
 
 output "server_id" {
   description = "ID of the server."

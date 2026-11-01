@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The Cloudflare check before an apply of lab, demo or showcase (docs/adr/0024): it prints the
+# The Cloudflare check before an apply of lab, demo or showcase: it prints the
 # API token permissions the environment needs, checks what a read can show of them, and refuses
 # (exit 1) when the zone holds a record outside the environment's managed names that the apply
 # would touch. "task preflight ENV=<env>" and "task up ENV=<env>" run it, and so do the tunnel

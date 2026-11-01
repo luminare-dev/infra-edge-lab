@@ -1,12 +1,5 @@
-# Reusable secret scan over the full git history with the gitleaks binary.
-#
-# Why the binary and not gitleaks/gitleaks-action: the action needs a GITLEAKS_LICENSE secret for
-# repositories owned by an organization (README of gitleaks-action v3.0.0, checked 2026-10-06),
-# fork pull requests never receive secrets, the action sends the repository name and owner to a
-# licence-key service, and the action itself left the MIT licence with v2. The gitleaks binary is
-# MIT, needs no secret and runs the same way locally. It is downloaded from the gitleaks release
-# and checked against a sha256 pinned here (from gitleaks_<version>_checksums.txt), so a replaced
-# release asset fails the job.
+# Reusable secret scan over the full history with the gitleaks binary (sha256-pinned below);
+# the action would need a licence secret for organisation repositories.
 name: reusable-gitleaks
 
 on:

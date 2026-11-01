@@ -1,6 +1,4 @@
-# Reusable CI: wording and name checks, byline consistency, workflow policy, YAML and Markdown
-# lint, actionlint, zizmor and the repository's tests. Called by ci.yml and pr-title.yml.
-# Third-party actions are pinned by full commit SHA; downloaded tools are pinned by sha256.
+# Reusable CI: wording checks, workflow policy, YAML/Markdown lint, actionlint, zizmor and the tests.
 name: reusable-ci
 
 on:

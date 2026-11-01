@@ -1,5 +1,5 @@
 # Containers with systemd as PID 1 on a Docker daemon, standing in for the virtual machines of
-# the lab (docs/adr/0010). The image is built from images/systemd-host/Dockerfile of this
+# the lab. The image is built from images/systemd-host/Dockerfile of this
 # repository, whose base images are pinned by digest. Ansible reaches the containers through the
 # Docker API (connection community.docker.docker), so no SSH server and no published port is
 # needed.

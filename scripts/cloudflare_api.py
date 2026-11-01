@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Zone and account checks against the Cloudflare API, for the tasks around an apply.
 
-The guard rails in the OpenTofu modules (docs/adr/0009) stop a wrong name before any API call.
-This script is the operational layer around them (docs/adr/0024): it checks the zone and the
+The guard rails in the OpenTofu modules stop a wrong name before any API call.
+This script is the operational layer around them: it checks the zone and the
 token before an apply, keeps a copy of the zone, compares the zone before and after a run, and
 removes what an interrupted demo run left behind. Subcommands:
 

@@ -5,8 +5,7 @@ Debian 13 genericcloud image with the QEMU guest agent), in the resource pool `l
 
 - cloud-init sets a static IPv4 address and creates the `ansible` user with the given keys.
 - `protect` sets Proxmox VE's own protection flag, which blocks removing the virtual machine and
-  its disks; it is understood by Terraform as well as OpenTofu
-  ([ADR 0005](../../../docs/adr/0005-opentofu-instead-of-terraform.md)).
+  its disks; it is understood by Terraform as well as OpenTofu.
 - Tags: `managed-by-tofu`, `env-<env>` and the extra tags, sorted.
 - The bpg/proxmox provider talks to the API only. Nothing here uploads snippets or files, so the
   provider configuration needs no `ssh` block and OpenTofu never logs in to the host.

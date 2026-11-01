@@ -2,12 +2,10 @@
 
 Knowing when something breaks: node_exporter on every host for host metrics, and optionally
 Uptime Kuma on a host that watches the others. node_exporter comes from its release archive with
-a pinned version and checksum
-([ADR 0017](../../../docs/adr/0017-node-exporter-from-the-release-archive.md)) and runs as a
+a pinned version and checksum and runs as a
 sandboxed systemd service; it and Uptime Kuma listen on loopback or a private address only, never
 on a public one. Uptime Kuma has no supported way to define monitors as code, so the role renders
-the monitors to create into a checklist
-([ADR 0018](../../../docs/adr/0018-uptime-kuma-monitors-as-a-checklist.md)).
+the monitors to create into a checklist.
 
 ## Requirements
 

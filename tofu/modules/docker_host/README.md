@@ -2,7 +2,7 @@
 
 Containers with systemd as PID 1 on a Docker daemon, standing in for the virtual machines of
 the lab, so that the playbooks can run on a workstation or a CI runner without a hypervisor or
-a cloud account ([ADR 0010](../../../docs/adr/0010-systemd-containers-as-a-local-substrate.md)).
+a cloud account.
 
 - The image is built from [images/systemd-host/Dockerfile](../../../images/systemd-host/Dockerfile)
   of this repository, on Debian 13 (`platform = "debian13"`, default) or Ubuntu 24.04

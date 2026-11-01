@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A copy of the whole DNS zone before an apply (docs/adr/0024): the zone file from the Cloudflare
+# A copy of the whole DNS zone before an apply: the zone file from the Cloudflare
 # API (GET /zones/<zone_id>/dns_records/export, BIND format), encrypted with age before it
 # touches the disk, in a local folder. "task dns-backup ENV=<env>" and "task up" for lab, demo and
 # showcase run it; the runbook explains how to restore a record from it.

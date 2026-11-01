@@ -1,5 +1,4 @@
-# Guard tests of the whole showcase environment with mocked providers (docs/adr/0009,
-# docs/adr/0014): no cloud account and no credentials, so they run on every pull request, forks
+# Guard tests of the whole showcase environment with mocked providers: no cloud account and no credentials, so they run on every pull request, forks
 # included. The zone, the addresses and the key are documentation values.
 
 mock_provider "cloudflare" {}

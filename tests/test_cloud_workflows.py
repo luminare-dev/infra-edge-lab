@@ -1,7 +1,7 @@
 """The gated cloud workflows (plan, apply, drift, e2e-tunnel), their helper scripts and the plan
-summary (docs/adr/0023, docs/adr/0024).
+summary.
 
-The workflows cannot run here (they need the owner's accounts), so these tests pin the promises
+The workflows cannot run here (they need real cloud accounts), so these tests pin the promises
 they make: every job is off until the repository variable CLOUD_ENVS_ENABLED is "true", nothing
 runs for a fork, each job's GitHub environment and permissions, the shared concurrency group of
 the jobs that write demo-* names, no plan file leaving the runner, the cleanup that

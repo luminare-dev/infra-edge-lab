@@ -1,8 +1,7 @@
 # Environments
 
 One root module per environment, each with its own state, providers, names and tests, built from
-the modules in [../modules](../modules)
-([ADR 0014](../../docs/adr/0014-one-root-module-per-environment.md)).
+the modules in [../modules](../modules).
 
 | Environment | Hosts | Modules | DNS names | Protection | State |
 |---|---|---|---|---|---|
@@ -57,12 +56,11 @@ task test ENV=lab                                             # mocked guard tes
   `backend_override.tf`. `task init ENV=<env>` without `BACKEND=local` removes the file again.
   Both run `tofu init -reconfigure`, which never copies a state between the two backends.
 - `task plan` always sets `fetch_tunnel_token = false`: a plan never reads the tunnel token, so
-  it works with a read-only Cloudflare token
-  ([ADR 0011](../../docs/adr/0011-remotely-managed-tunnel-and-its-token.md)).
+  it works with a read-only Cloudflare token.
 - Arguments after `--` go to OpenTofu, for example `task plan ENV=lab -- -out=lab.tfplan`
   (the plan file is encrypted and git-ignored).
 - The R2 endpoint and keys come from `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID` and
-  `AWS_SECRET_ACCESS_KEY` ([ADR 0013](../../docs/adr/0013-encrypted-state-in-r2-with-a-lock-file.md)).
+  `AWS_SECRET_ACCESS_KEY`.
   Without `AWS_ENDPOINT_URL_S3` the S3 backend sends its requests to AWS, so `task init` and
   `task plan` refuse to use the remote backend without it.
 - `task up ENV=<env>` runs init, apply, inventory, configure and smoke, `task destroy ENV=<env>`
@@ -70,7 +68,7 @@ task test ENV=lab                                             # mocked guard tes
   init ([runbook](../../docs/runbook.md#procedure-rebuild-an-environment-from-nothing)).
   `task destroy` and `task rebuild` refuse `showcase`. For `lab`, `demo` and `showcase`,
   `task up` runs `task preflight` and `task dns-backup` before the apply and stops if either
-  fails ([ADR 0024](../../docs/adr/0024-a-tunnel-test-guarded-by-a-zone-preflight-a-comparison-and-a-sweeper.md)).
+  fails.
   The `local` environment needs a Docker daemon that allows privileged containers; it creates the
   containers `lab-local-edge-01`, `lab-local-db-01` and `lab-local-fx-01` and the network
   `lab-local`, and `task e2e:local` builds, checks and destroys it in one go.

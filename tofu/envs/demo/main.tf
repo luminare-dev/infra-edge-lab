@@ -1,5 +1,5 @@
-# The demo: one throw-away host with its own tunnel and Access applications, never protected
-# (docs/adr/0014). substrate = "hcloud" creates a cloud server; substrate = "docker" creates the
+# The demo: one throw-away host with its own tunnel and Access applications, never protected.
+# substrate = "hcloud" creates a cloud server; substrate = "docker" creates the
 # same host as a systemd container on the local Docker daemon, so the tunnel can be tested end
 # to end on a CI runner without a cloud server. Names, records and Access rules are the same for
 # both. The zone, the account and every credential come from the environment

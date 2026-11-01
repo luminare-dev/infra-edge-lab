@@ -1,4 +1,4 @@
-# Identifiers, names and addresses. The tunnel token is never an output (docs/adr/0011); the
+# Identifiers, names and addresses. The tunnel token is never an output; the
 # service token secrets are marked sensitive and are kept in the encrypted state only.
 
 output "substrate" {

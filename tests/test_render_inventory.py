@@ -1,6 +1,6 @@
 """scripts/render_inventory.py: the Ansible inventory from the "hosts" output of an environment.
 
-The renderer is the only link between OpenTofu and Ansible (docs/adr/0014), so these tests pin
+The renderer is the only link between OpenTofu and Ansible, so these tests pin
 the inventory it writes for each kind of host, the groups that are always present, the refusal
 of every malformed input before anything is written, and the YAML that Ansible reads. Standard
 library only, except the round trip through PyYAML (requirements-test.txt), which is skipped

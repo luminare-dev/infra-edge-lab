@@ -1,16 +1,5 @@
-# End-to-end test of the local environment on every pull request and on demand: "task e2e:local"
-# (scripts/e2e_local.sh) creates edge-01, db-01 and fx-01 as systemd containers on the runner's
-# Docker daemon with OpenTofu, writes the inventory, runs playbooks/site.yml twice (the second run
-# must change nothing), plans again (no changes), smoke-tests the hosts, backs each one up and
-# tests the restore, and always destroys them.
-# No secret and no account: the state passphrase is random per run, the game server is the fake
-# build of tests/fake-artifact/, and there is no tunnel, so the workflow is safe on fork pull
-# requests. The job summary shows the time of each step.
-#
-# It installs the collections of ansible/requirements.yml: the luminare collections from their
-# GitHub repositories at the pinned tags, so the run needs those repositories to be public and
-# the tags to exist; the community collections come from the hash-pinned "ansible" package or
-# from Ansible Galaxy at exact versions.
+# Rebuilds the local environment from nothing (task e2e:local) on every pull request.
+# No secret and no account, so it is safe on fork pull requests.
 name: e2e-local
 
 on:

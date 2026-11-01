@@ -1,5 +1,5 @@
 # The showcase: a skeleton for one long-lived cloud server that is never thrown away. It is not
-# applied from this repository yet (docs/adr/0014). Everything here is protected: the server
+# applied from this repository yet. Everything here is protected: the server
 # has delete and rebuild protection, and its primary IPv4 address outlives a replacement of
 # the server, so that the DNS-only record "play" (game traffic over UDP, which a tunnel cannot
 # carry) stays valid. The zone, the account and every credential come from the environment

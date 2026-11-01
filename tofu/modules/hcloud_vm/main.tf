@@ -1,6 +1,6 @@
 # One cloud server for the demo and showcase environments. No public SSH: Ansible reaches the
 # server through the tunnel (or, as a fallback, through the CI firewall from one runner).
-# Protection uses the provider's own flags, which Terraform understands too (docs/adr/0005).
+# Protection uses the provider's own flags, which Terraform understands too.
 
 locals {
   labels = merge(var.labels, {
@@ -10,7 +10,7 @@ locals {
 
   # The tunnel token, read only when asked for (the data source needs write permission). It
   # reaches the server once, in the first-boot user data, and lands in a 0600 file; the
-  # cloudflared role takes the file over later. It is never an output (docs/adr/0011).
+  # cloudflared role takes the file over later. It is never an output.
   tunnel_token = var.fetch_tunnel_token ? data.cloudflare_zero_trust_tunnel_cloudflared_token.this[0].token : ""
 
   cloudflared_deb_url = "https://github.com/cloudflare/cloudflared/releases/download/${var.cloudflared_version}/cloudflared-linux-amd64.deb"

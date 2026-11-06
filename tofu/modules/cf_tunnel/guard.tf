@@ -1,4 +1,4 @@
-# Name and record-type rules for the shared DNS zone (docs/adr/0009). The zone also holds
+# Name and record-type rules for the shared DNS zone. The zone also holds
 # records that this repository must never create or change: the website, mail (MX, SPF, DKIM,
 # DMARC, MTA-STS) and other sites. The variable validations in variables.tf and the
 # precondition in main.tf use these values; the cf_access_app module has the same name rules,

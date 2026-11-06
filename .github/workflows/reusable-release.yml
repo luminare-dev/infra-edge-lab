@@ -1,11 +1,5 @@
-# Reusable release: release-please keeps a release pull request open; merging it creates a draft
-# GitHub release and the vX.Y.Z tag. The same run then builds the source archive, writes
-# SHA256SUMS, attests the archive (SLSA build provenance), attaches both files and publishes the
-# release. Everything happens in one run because a tag or release created with GITHUB_TOKEN
-# does not trigger other workflows.
-#
-# The release is created as a draft (release-please-config.json: draft + force-tag-creation) and
-# published only after every file is attached, so it also works with immutable releases turned on.
+# Reusable release: release-please, then the source archive, SHA256SUMS and provenance in one run.
+# The release stays a draft until every file is attached.
 name: reusable-release
 
 on:
@@ -77,7 +71,7 @@ jobs:
           (cd dist && sha256sum -c SHA256SUMS)
 
       - name: Hand the files to the publish job
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-dist
           path: dist/
@@ -95,7 +89,7 @@ jobs:
       attestations: write    # store the attestation
     steps:
       - name: Fetch the files
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-dist
           path: dist

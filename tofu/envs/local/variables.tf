@@ -1,5 +1,5 @@
 # Inputs of the local environment: systemd containers on the local Docker daemon, no cloud
-# account and no secret (docs/adr/0014). The state passphrase is declared in encryption.tofu.
+# account and no secret. The state passphrase is declared in encryption.tofu.
 
 variable "hosts" {
   description = "Hosts to create, keyed by host name, with the inventory groups of each host (edge, db, fxserver, monitoring, docker_hosts)."

@@ -1,16 +1,5 @@
-# End-to-end test of the tunnel (docs/adr/0024): "task e2e:tunnel" (scripts/e2e_tunnel.sh) creates
-# the demo environment with its host as a systemd container on the runner's Docker daemon, a real
-# tunnel demo-e2e with demo-web and demo-ssh behind Access, configures the host with site.yml,
-# checks both hostnames from outside through Cloudflare and always destroys everything again,
-# then sweeps every demo-* object created during the run and compares the rest of the zone with
-# its state before the run. No cloud server is created.
-#
-# Off until the repository variable CLOUD_ENVS_ENABLED is "true". It runs on pushes to main, every
-# night and on demand, never for a pull request. Its GitHub environment demo-e2e (no reviewer,
-# deployment branch main only) holds only the SOPS_AGE_KEY of secrets/demo-e2e.enc.env: a Cloudflare
-# token for the zone and the account, without any cloud server token. It shares its concurrency
-# group with the apply of demo, which uses the same names; a run is never cancelled. The last step
-# runs also after a failure, a timeout or a cancellation: it removes the containers and sweeps.
+# End-to-end test of the tunnel (task e2e:tunnel) on pushes to main, nightly and on demand.
+# Off until CLOUD_ENVS_ENABLED is "true"; the last step always cleans up and sweeps.
 name: e2e-tunnel
 
 on:

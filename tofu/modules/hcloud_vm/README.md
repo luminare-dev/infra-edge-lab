@@ -21,8 +21,7 @@ firewall and, optionally, a primary IPv4 address that outlives the server.
 - With `fetch_tunnel_token = true` the module reads the tunnel token (this needs a Cloudflare API
   token with tunnel write permission), writes it to `/etc/cloudflared/token` (mode 0600, owner
   `cloudflared`) at first boot and starts cloudflared with `--token-file`. The token is then in
-  the server's user data at Hetzner and in the encrypted state; it is never an output
-  ([ADR 0011](../../../docs/adr/0011-remotely-managed-tunnel-and-its-token.md)). Read-only plans
+  the server's user data at Hetzner and in the encrypted state; it is never an output. Read-only plans
   leave it `false`; `user_data` changes are ignored after creation, so such a plan does not
   replace the server.
 - The module adds `ssh_public_key` to the project as an SSH key for the server. Hetzner Cloud

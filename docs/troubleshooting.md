@@ -153,8 +153,7 @@ through which a container reaches Docker's DNS server, and the drop-in
 without `playbooks/local_prepare.yml`, which imports `playbooks/container_dns.yml`).
 
 **Fix:** run `task configure ENV=local`, which runs `local_prepare.yml` first, or run that
-playbook and then `systemctl restart nftables` in the container
-([ADR 0022](adr/0022-an-end-to-end-run-of-the-local-environment-on-every-pull-request.md)).
+playbook and then `systemctl restart nftables` in the container.
 
 ## `task e2e:tunnel`: `... is left from an earlier run` or `containers named lab-e2e-demo-* exist already`
 

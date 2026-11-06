@@ -1,6 +1,4 @@
-# Caller: lint, tests and the full-history secret scan on every pull request and push to main;
-# the Molecule scenarios of the roles in ansible/roles on pull requests, on demand and once a week.
-# Required checks for the main ruleset: "ci / lint-test" and "secrets / gitleaks".
+# Lint, tests and the secret scan on every pull request and push to main; Molecule on PRs and weekly.
 name: ci
 
 on:

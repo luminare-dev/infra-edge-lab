@@ -2,7 +2,7 @@
 
 A remotely managed Cloudflare tunnel with its ingress rules and the DNS records that point at
 it, guarded so that it can only ever touch its own names in a zone that it shares with other
-records ([ADR 0009](../../../docs/adr/0009-guard-rails-for-a-shared-dns-zone.md)).
+records.
 
 - The tunnel is remotely managed (`config_src = "cloudflare"`), so it has no `tunnel_secret` and
   no credentials file on the host.
@@ -12,8 +12,7 @@ records ([ADR 0009](../../../docs/adr/0009-guard-rails-for-a-shared-dns-zone.md)
   `managed-by-tofu env=<env>`. In `showcase` only, `address_records` adds DNS-only A or AAAA
   records for traffic that a tunnel cannot carry (UDP game traffic on `play`). No other record
   type can be created.
-- The tunnel token is never read and never an output
-  ([ADR 0011](../../../docs/adr/0011-remotely-managed-tunnel-and-its-token.md)).
+- The tunnel token is never read and never an output.
 
 ## Usage
 

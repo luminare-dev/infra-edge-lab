@@ -30,7 +30,7 @@
 #              (scripts/dns_backup.sh); either one failing stops "up" before the apply.
 #   destroy    tofu destroy (local: without asking), then the generated inventory and, for
 #              local, the empty state file and the generated secrets. Refused for showcase.
-#   rebuild    destroy, then up, with the time it took. Refused for showcase (docs/adr/0014).
+#   rebuild    destroy, then up, with the time it took. Refused for showcase.
 #
 # Credentials and the state passphrase come from secrets/<env>.enc.env through sops exec-env when
 # that file exists (scripts/tofu_env.sh), otherwise from the caller's environment; the local
@@ -62,7 +62,7 @@ case "$env" in
   *) die "unknown environment '$env' (local, lab, demo or showcase)" ;;
 esac
 if [ "$env" = showcase ] && { [ "$action" = destroy ] || [ "$action" = rebuild ]; }; then
-  die "refusing to $action showcase: it is the protected long-lived environment (docs/adr/0014), taken down by hand only"
+  die "refusing to $action showcase: it is the protected long-lived environment, taken down by hand only"
 fi
 
 inventory_dir="ansible/inventories/$env"
@@ -128,7 +128,7 @@ do_configure() {
   require_inventory
   command -v ansible-playbook >/dev/null || die "ansible-playbook is not on the PATH (task venv, then use the task targets)"
   if [ "$env" = local ]; then
-    # The local environment has no tunnel (docs/adr/0014): a token from the caller's shell never
+    # The local environment has no tunnel: a token from the caller's shell never
     # reaches its containers.
     unset TUNNEL_TOKEN
     playbook playbooks/local_prepare.yml
@@ -203,7 +203,7 @@ do_up() {
   bash scripts/tofu_env.sh init "$env"
   if [ "$env" != local ]; then
     # Before every apply into the shared zone: the Cloudflare check and an encrypted copy of the
-    # zone (docs/adr/0024).
+    # zone.
     bash scripts/cf_preflight.sh "$env"
     bash scripts/dns_backup.sh "$env"
   fi

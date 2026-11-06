@@ -1,6 +1,6 @@
 # Inputs of the demo environment: one host that is thrown away after each use, on a cloud server
 # (substrate = "hcloud") or as a systemd container on the Docker daemon of a CI runner
-# (substrate = "docker"), published through its own tunnel behind Access (docs/adr/0014). The
+# (substrate = "docker"), published through its own tunnel behind Access. The
 # state passphrase is declared in encryption.tofu.
 
 variable "substrate" {

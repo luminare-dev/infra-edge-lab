@@ -1,4 +1,4 @@
-# The hosts output has the same shape in every environment (docs/adr/0014), so the inventory
+# The hosts output has the same shape in every environment, so the inventory
 # renderer does not depend on the substrate.
 
 output "hosts" {

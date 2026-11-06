@@ -1,17 +1,5 @@
-# Gated apply of demo or showcase, on demand only (docs/adr/0023). Off until the repository
-# variable CLOUD_ENVS_ENABLED is "true". lab is never applied from CI: its write tokens stay on the
-# operator's workstation.
-#
-# The job "plan" shows the reviewer a read-only plan by resource (environment lab-plan). The job
-# "apply" then waits in the GitHub environment of the input (demo or showcase), which requires the
-# owner's approval and holds the SOPS_AGE_KEY of secrets/<env>.enc.env. It plans again with the
-# tunnel token for the first boot, checks that plan against the zone (scripts/cf_preflight.sh),
-# applies exactly that plan, checks that no record outside the environment changed, and runs the
-# inventory, configure and smoke steps (scripts/cloud_ci.sh apply). Ansible reaches the cloud
-# server over SSH through the tunnel only: cloudflared access ssh to <env>-ssh with the service
-# token from the outputs, and the private key in SSH_PRIVATE_KEY_B64 of the SOPS file
-# (scripts/environment.sh). One run per environment at a
-# time, never cancelled; demo shares its group with the tunnel test, which uses the same names.
+# Gated apply of demo or showcase, on demand only; off until CLOUD_ENVS_ENABLED is "true".
+# lab is never applied from CI. The apply job waits for a review in the environment of the input.
 name: apply
 
 on:
@@ -69,7 +57,7 @@ jobs:
     if: vars.CLOUD_ENVS_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    # demo or showcase: a required reviewer (the owner), "Prevent self-reviews" off.
+    # demo or showcase: a required reviewer, "Prevent self-reviews" off.
     environment: ${{ inputs.env }}
     permissions:
       contents: read

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The sweeper of the demo environment (docs/adr/0024): "task sweep:demo" lists the demo objects
+# The sweeper of the demo environment: "task sweep:demo" lists the demo objects
 # that are left in Cloudflare after a run that could not destroy them, and
 # "task sweep:demo -- --delete" removes them. The objects are those that the cf_tunnel and
 # cf_access_app modules create for demo, recognised by their names and markers:

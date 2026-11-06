@@ -19,8 +19,7 @@ release may contain breaking changes; they are listed under "BREAKING CHANGES" i
 ## The pinned collections
 
 `luminare.infra_edge` and `luminare.gameserver` are pinned to a release tag in
-`ansible/requirements.yml`, and the community collections to exact versions
-([ADR 0016](adr/0016-collections-from-git-tags-and-one-pinned-bundle.md)). To move to a new tag:
+`ansible/requirements.yml`, and the community collections to exact versions. To move to a new tag:
 
 1. Read the collection's changelog between the two tags.
 2. Change `version:` of the collection in `ansible/requirements.yml` and the tag in the README's
@@ -48,13 +47,13 @@ ANSIBLE_COLLECTIONS_PATH=/tmp/collections task e2e:local
 ```
 
 An update of the `ansible` package in `requirements-test.txt` (Dependabot) changes the bundled
-community collections: set their versions in `ansible/requirements.yml` to the new ones; the
-[runbook](runbook.md#failure-a-dependabot-pull-request-fails-ci) explains the failing test.
+community collections: set their versions in `ansible/requirements.yml` to the new ones;
+`tests/test_ansible.py` names each one.
 
 ## Tools, providers and images
 
 - OpenTofu providers: Dependabot proposes new constraints and lock files; read the provider's
-  changelog, then run `task tofu` ([ADR 0012](adr/0012-provider-pins-and-lock-files.md)). A new
+  changelog, then run `task tofu`. A new
   major version of a provider, and every release of `bpg/proxmox` below 1.0, also needs a plan of
   each environment that uses it before it is merged.
 - Binary tools (OpenTofu, TFLint, Terraform, Trivy, go-task, gitleaks, actionlint, SOPS, age,

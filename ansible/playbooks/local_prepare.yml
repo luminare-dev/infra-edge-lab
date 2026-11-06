@@ -34,7 +34,7 @@
       run_once: true
 
 # Docker's DNS server inside the containers, kept reachable after the base firewall's "flush
-# ruleset" (playbooks/container_dns.yml; local environment and the tunnel test only, docs/adr/0022).
+# ruleset" (playbooks/container_dns.yml; local environment and the tunnel test only).
 - name: Keep the containers' name resolution working under the base firewall
   ansible.builtin.import_playbook: container_dns.yml
 

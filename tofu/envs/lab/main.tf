@@ -1,5 +1,5 @@
 # The lab: virtual machines on Proxmox VE, published through one remotely managed tunnel whose
-# connector runs on the edge host (docs/adr/0014). Only lab-demo is public; the hypervisor UI,
+# connector runs on the edge host. Only lab-demo is public; the hypervisor UI,
 # the status page and the game server admin panel sit behind Cloudflare Access, and lab-pveapi
 # lets CI reach the Proxmox VE API with a service token. The zone, the account and every
 # credential come from the environment (secrets/lab.enc.env); none is written here.

@@ -1,5 +1,5 @@
 # Inputs of the showcase environment: a skeleton for one long-lived, protected cloud server with
-# a stable address, its own tunnel and Access applications (docs/adr/0014). It is not applied
+# a stable address, its own tunnel and Access applications. It is not applied
 # from this repository yet. The state passphrase is declared in encryption.tofu.
 
 variable "zone" {

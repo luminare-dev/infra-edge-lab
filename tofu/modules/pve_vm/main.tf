@@ -1,7 +1,7 @@
 # One Proxmox VE virtual machine, a full clone of the cloud-init template. The provider talks to
 # the API only (token in PROXMOX_VE_API_TOKEN); there is no ssh block in the provider
 # configuration, because nothing here uploads snippets or files. Protection uses Proxmox VE's
-# own flag, which Terraform understands too (docs/adr/0005).
+# own flag, which Terraform understands too.
 
 resource "proxmox_virtual_environment_vm" "this" {
   name        = var.name

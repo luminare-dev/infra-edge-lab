@@ -1,4 +1,4 @@
-"""scripts/tunnel_token.py: the tunnel token for one configure run (docs/adr/0011).
+"""scripts/tunnel_token.py: the tunnel token for one configure run.
 
 The script is tested against a stand-in for the Cloudflare API on a loopback port (the hidden
 --api-base option); no test ever contacts Cloudflare. The tests pin the request (path and bearer

@@ -1,11 +1,5 @@
-# Reusable OpenSSF Scorecard analysis with SARIF upload to code scanning.
-#
-# With publish_results the Scorecard API enforces workflow rules (README of
-# ossf/scorecard-action v2.4.4, checked 2026-10-06): no top-level env or defaults, no
-# workflow-level write permissions, id-token: write only in the Scorecard job, no job env,
-# defaults, containers or services, an Ubuntu GitHub-hosted runner, and only these steps:
-# actions/checkout, actions/upload-artifact, github/codeql-action/upload-sarif,
-# ossf/scorecard-action, step-security/harden-runner. Keep this file inside those rules.
+# Reusable OpenSSF Scorecard analysis. publish_results imposes strict workflow rules
+# (see ossf/scorecard-action); keep this file within them.
 name: reusable-scorecard
 
 on:

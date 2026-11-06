@@ -1,5 +1,5 @@
 # Inputs of the cf_tunnel module. Every DNS name and ingress hostname is checked against the
-# rules in guard.tf before a plan is made (docs/adr/0009).
+# rules in guard.tf before a plan is made.
 
 variable "account_id" {
   description = "Cloudflare account ID that owns the tunnel (32 hexadecimal characters)."

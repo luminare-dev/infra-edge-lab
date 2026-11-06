@@ -1,5 +1,5 @@
 # Inputs of the cf_access_app module. Application hostnames follow the same rules as the DNS
-# names of the cf_tunnel module (guard.tf, docs/adr/0009).
+# names of the cf_tunnel module (guard.tf).
 
 variable "account_id" {
   description = "Cloudflare account ID of the Zero Trust organization (32 hexadecimal characters)."

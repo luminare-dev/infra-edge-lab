@@ -2,8 +2,7 @@
 
 Cloudflare Access applications in front of the tunnel hostnames: people log in with a one-time
 PIN sent to a listed e-mail address, machines send a service token. Hostnames follow the same
-rules as in [cf_tunnel](../cf_tunnel/README.md#name-rules)
-([ADR 0009](../../../docs/adr/0009-guard-rails-for-a-shared-dns-zone.md)).
+rules as in [cf_tunnel](../cf_tunnel/README.md#name-rules).
 
 - One reusable "allow" policy for every `email_otp` application, holding the listed addresses.
 - For every `service_auth` application its own service token (one year by default) and a

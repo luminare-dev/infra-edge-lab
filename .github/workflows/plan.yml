@@ -1,15 +1,5 @@
-# Read-only plans of lab, demo and showcase on pull requests that change the OpenTofu code
-# (docs/adr/0023). Off until the repository variable CLOUD_ENVS_ENABLED is "true": unset, every job
-# is skipped and CI stays green without any account. Never for a pull request from a fork or from
-# Dependabot (neither gets the environment's secret); on demand for any branch.
-#
-# Each job runs in the GitHub environment lab-plan (no reviewer), whose only secret SOPS_AGE_KEY
-# decrypts the read-only files secrets/<env>-ci.enc.env and nothing else (docs/runbook.md). An
-# environment without that file is skipped with a notice, and lab reports "lab offline" when its
-# Access endpoint answers with a tunnel error. The plan runs without the state lock (a read-only
-# token cannot write it) and never reads the tunnel token. Logs of a public repository are public:
-# only the summary by resource (scripts/plan_summary.py) reaches the log and the job summary, and
-# the plan file never leaves the runner (no artifact).
+# Read-only plans of lab, demo and showcase on pull requests that touch tofu/.
+# Off until CLOUD_ENVS_ENABLED is "true"; only the summary by resource reaches the log.
 name: plan
 
 on:

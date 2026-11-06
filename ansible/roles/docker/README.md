@@ -4,8 +4,7 @@ Docker Engine from Docker's own APT repository for the hosts that run containers
 host with Uptime Kuma, other application hosts), never for a game server. Docker writes its own
 packet filter rules for published ports, which bypass the host firewall, so the role makes
 loopback the default address of every published port and keeps the firewall of the
-`luminare.infra_edge` base role working next to Docker
-([ADR 0019](../../../docs/adr/0019-docker-ports-on-loopback-and-a-firewall-that-restarts-docker.md)).
+`luminare.infra_edge` base role working next to Docker.
 
 ## Requirements
 

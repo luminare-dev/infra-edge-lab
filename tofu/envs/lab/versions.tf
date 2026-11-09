@@ -5,7 +5,7 @@ terraform {
     # Below 1.0 a minor release may break: "~> 0.116.1" accepts patch releases only.
     proxmox = {
       source  = "bpg/proxmox"
-      version = "~> 0.116.1"
+      version = "~> 0.120.0"
     }
     cloudflare = {
       source  = "cloudflare/cloudflare"

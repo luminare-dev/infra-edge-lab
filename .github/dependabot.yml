@@ -21,9 +21,14 @@ updates:
       prefix: ci
       include: scope
     labels: [dependencies]
+    open-pull-requests-limit: 5
     groups:
       actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+      actions-major:
+        patterns: ["*"]
+        update-types: ["major"]
 
   - package-ecosystem: pip
     directory: /
@@ -36,9 +41,14 @@ updates:
       prefix: build
       include: scope
     labels: [dependencies]
+    open-pull-requests-limit: 5
     groups:
       dev-tools:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+      dev-tools-major:
+        patterns: ["*"]
+        update-types: ["major"]
 
   # Every module and environment has its own lock file; an environment locks the same provider
   # builds as the modules it calls, so one grouped pull request updates them together.
@@ -55,6 +65,7 @@ updates:
       prefix: build
       include: scope
     labels: [dependencies]
+    open-pull-requests-limit: 5
     groups:
       providers:
         patterns: ["*"]
@@ -62,6 +73,11 @@ updates:
         # The opentofu ecosystem names a provider "<namespace>/<name>" in lower case, without the
         # registry host (dependabot-core opentofu/file_parser.rb), when the module sets its source.
         exclude-patterns: ["bpg/proxmox"]
+        update-types: ["minor", "patch"]
+      providers-major:
+        patterns: ["*"]
+        exclude-patterns: ["bpg/proxmox"]
+        update-types: ["major"]
 
   # The digest-pinned base images (Debian 13 and Ubuntu 24.04) of the systemd host image that
   # the docker_host module and the Molecule scenarios build.
@@ -76,6 +92,7 @@ updates:
       prefix: build
       include: scope
     labels: [dependencies]
+    open-pull-requests-limit: 5
     groups:
       base-images:
         patterns: ["*"]

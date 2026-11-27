@@ -14,6 +14,6 @@
 #   pip install --require-hashes --only-binary=:all: -r requirements-test.txt
 ansible==14.5.0
 ansible-core==2.21.6
-ansible-lint==26.10.1
-molecule==26.10.0
+ansible-lint==26.11.0
+molecule==26.11.0
 molecule-plugins[docker]==26.11.0
